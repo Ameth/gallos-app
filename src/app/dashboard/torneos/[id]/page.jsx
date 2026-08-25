@@ -97,7 +97,54 @@ export default function TorneoDetallePage({ params }) {
   }
 
   useEffect(() => {
-    cargarDatos()
+    let montado = true
+
+    const obtenerDatos = async () => {
+      setLoading(true)
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (user && montado) {
+        const { data: pData } = await supabase
+          .from('perfiles')
+          .select('*')
+          .eq('id', user.id)
+          .single()
+        if (pData && montado) setPerfil(pData)
+      }
+
+      const { data: tData } = await supabase
+        .from('torneos')
+        .select('*')
+        .eq('id', torneoId)
+        .single()
+      const { data: iData } = await supabase
+        .from('inscripciones_pelea')
+        .select('*')
+        .eq('torneo_id', torneoId)
+        .order('created_at', { ascending: false })
+      const { data: pData } = await supabase
+        .from('peleas')
+        .select(
+          '*, gallo_azul:gallo_azul_id(*), gallo_blanco:gallo_blanco_id(*)',
+        )
+        .eq('torneo_id', torneoId)
+        .order('numero_pelea', { ascending: true })
+
+      if (montado) {
+        if (tData) setTorneo(tData)
+        if (iData) setInscripciones(iData)
+        if (pData) setPeleas(pData)
+        setLoading(false)
+      }
+    }
+
+    obtenerDatos()
+
+    return () => {
+      montado = false
+    }
   }, [torneoId])
 
   useEffect(() => {

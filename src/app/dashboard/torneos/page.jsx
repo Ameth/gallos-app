@@ -42,7 +42,39 @@ export default function TorneosPage() {
   }
 
   useEffect(() => {
-    cargarDatos()
+    let montado = true
+
+    const obtenerDatos = async () => {
+      setLoading(true)
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (user && montado) {
+        const { data: pData } = await supabase
+          .from('perfiles')
+          .select('*')
+          .eq('id', user.id)
+          .single()
+        if (pData && montado) setPerfil(pData)
+      }
+
+      const { data: tData } = await supabase
+        .from('torneos')
+        .select('*')
+        .order('fecha', { ascending: false })
+
+      if (montado) {
+        if (tData) setTorneos(tData)
+        setLoading(false)
+      }
+    }
+
+    obtenerDatos()
+
+    return () => {
+      montado = false
+    }
   }, [])
 
   const handleSubmit = async (e) => {
