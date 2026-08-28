@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Trophy, LogOut, Bird } from 'lucide-react'
+import Image from 'next/image'
+import { Trophy, LogOut } from 'lucide-react'
 
 export default async function DashboardLayout({ children }) {
   const supabase = await createClient()
@@ -21,19 +22,30 @@ export default async function DashboardLayout({ children }) {
 
   return (
     <div className='min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans'>
-      <header className='border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-6 py-3 sticky top-0 z-50'>
+      <header className='border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-6 py-2.5 sticky top-0 z-50'>
         <div className='max-w-7xl mx-auto flex items-center justify-between'>
-          <div className='flex items-center gap-8'>
-            <Link href='/dashboard/torneos' className='flex items-center gap-2'>
-              <span className='text-lg font-black text-amber-500 tracking-wider'>
-                MI QUERENCIA
-              </span>
-              <span className='text-[10px] bg-amber-500/20 text-amber-400 font-bold px-1.5 py-0.5 rounded border border-amber-500/30'>
-                ADMIN
-              </span>
+          <div className='flex items-center gap-6'>
+            <Link href='/dashboard/torneos' className='flex items-center gap-3'>
+              <div className='relative w-10 h-10 rounded-full overflow-hidden border border-amber-500/40 shadow-sm bg-black flex-shrink-0'>
+                <Image
+                  src='/logo-mi-querencia.jpeg'
+                  alt='Centro Turístico Mi Querencia'
+                  fill
+                  className='object-cover'
+                  priority
+                />
+              </div>
+              <div>
+                <span className='text-sm font-black text-amber-500 tracking-wider block leading-tight'>
+                  MI QUERENCIA
+                </span>
+                <span className='text-[10px] text-slate-400 font-semibold block leading-tight'>
+                  Centro Turístico
+                </span>
+              </div>
             </Link>
 
-            <nav className='flex items-center gap-2 text-sm font-medium'>
+            <nav className='flex items-center gap-2 text-sm font-medium border-l border-slate-800 pl-6'>
               <Link
                 href='/dashboard/torneos'
                 className='flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition'
