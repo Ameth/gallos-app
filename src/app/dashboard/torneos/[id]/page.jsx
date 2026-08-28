@@ -617,8 +617,8 @@ export default function TorneoDetallePage({ params }) {
                 No hay peleas armadas todavía.
               </p>
               <p className='text-slate-500 text-xs mt-1'>
-                Presiona "Ejecutar Cotejo" para casar automáticamente o usa el
-                casamiento manual.
+                {`Presiona "Ejecutar Cotejo" para casar automáticamente o usa el
+                casamiento manual.`}
               </p>
             </div>
           ) : (

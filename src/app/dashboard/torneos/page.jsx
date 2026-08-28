@@ -2,36 +2,24 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Trophy, Calendar, ArrowRight } from 'lucide-react'
+import { Plus, Trophy, Calendar, ArrowRight, Edit2, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 
 export default function TorneosPage() {
   const supabase = createClient()
   const [torneos, setTorneos] = useState([])
-  const [perfil, setPerfil] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [editandoId, setEditandoId] = useState(null)
   const [form, setForm] = useState({
     nombre: '',
     fecha: new Date().toISOString().split('T')[0],
     max_comodines: 2,
+    estado: 'PESAJE',
   })
 
   const cargarDatos = async () => {
     setLoading(true)
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (user) {
-      const { data: pData } = await supabase
-        .from('perfiles')
-        .select('*')
-        .eq('id', user.id)
-        .single()
-      if (pData) setPerfil(pData)
-    }
-
     const { data: tData } = await supabase
       .from('torneos')
       .select('*')
@@ -41,72 +29,97 @@ export default function TorneosPage() {
     setLoading(false)
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
-    let montado = true
-
-    const obtenerDatos = async () => {
-      setLoading(true)
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-
-      if (user && montado) {
-        const { data: pData } = await supabase
-          .from('perfiles')
-          .select('*')
-          .eq('id', user.id)
-          .single()
-        if (pData && montado) setPerfil(pData)
-      }
-
-      const { data: tData } = await supabase
-        .from('torneos')
-        .select('*')
-        .order('fecha', { ascending: false })
-
-      if (montado) {
-        if (tData) setTorneos(tData)
-        setLoading(false)
-      }
-    }
-
-    obtenerDatos()
-
-    return () => {
-      montado = false
-    }
+    cargarDatos()
   }, [])
+
+  const abrirModalCrear = () => {
+    setEditandoId(null)
+    setForm({
+      nombre: '',
+      fecha: new Date().toISOString().split('T')[0],
+      max_comodines: 2,
+      estado: 'PESAJE',
+    })
+    setShowModal(true)
+  }
+
+  const abrirModalEditar = (torneo) => {
+    setEditandoId(torneo.id)
+    setForm({
+      nombre: torneo.nombre || '',
+      fecha: torneo.fecha || new Date().toISOString().split('T')[0],
+      max_comodines: torneo.max_comodines ?? 2,
+      estado: torneo.estado || 'PESAJE',
+    })
+    setShowModal(true)
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (perfil?.rol !== 'gallera' && perfil?.rol !== 'admin') {
-      alert('Solo las cuentas de tipo Club / Gallera pueden crear eventos.')
-      return
-    }
-
     const {
       data: { user },
     } = await supabase.auth.getUser()
 
-    const { error } = await supabase.from('torneos').insert({
-      ...form,
-      gallera_id: user.id,
-    })
+    const payload = {
+      nombre: form.nombre.trim().toUpperCase(),
+      fecha: form.fecha,
+      max_comodines: parseInt(form.max_comodines) || 0,
+      estado: form.estado,
+    }
 
-    if (!error) {
+    if (editandoId) {
+      const { data, error } = await supabase
+        .from('torneos')
+        .update(payload)
+        .eq('id', editandoId)
+        .select()
+
+      if (error) {
+        alert('Error al actualizar torneo: ' + error.message)
+        return
+      }
+
+      if (!data || data.length === 0) {
+        alert(
+          'No se pudo actualizar el registro. Verifica los permisos RLS en Supabase.',
+        )
+        return
+      }
+
       setShowModal(false)
-      setForm({
-        nombre: '',
-        fecha: new Date().toISOString().split('T')[0],
-        max_comodines: 2,
-      })
-      cargarDatos()
+      setEditandoId(null)
+      await cargarDatos()
     } else {
-      alert('Error: ' + error.message)
+      const { error } = await supabase.from('torneos').insert({
+        ...payload,
+        gallera_id: user.id,
+      })
+
+      if (!error) {
+        setShowModal(false)
+        await cargarDatos()
+      } else {
+        alert('Error al crear torneo: ' + error.message)
+      }
     }
   }
 
-  const esOrganizador = perfil?.rol === 'gallera' || perfil?.rol === 'admin'
+  const handleDeleteTorneo = async (id, nombre) => {
+    if (
+      confirm(
+        `¿Estás seguro de eliminar el torneo "${nombre}"? Se borrarán sus inscripciones y peleas asociadas.`,
+      )
+    ) {
+      const { error } = await supabase.from('torneos').delete().eq('id', id)
+      if (!error) {
+        cargarDatos()
+      } else {
+        alert('Error al eliminar: ' + error.message)
+      }
+    }
+  }
 
   return (
     <div>
@@ -116,21 +129,16 @@ export default function TorneosPage() {
             Torneos y Veladas
           </h1>
           <p className='text-sm text-slate-400'>
-            {esOrganizador
-              ? 'Organiza torneos, administra el pesaje y realiza los cotejos'
-              : 'Consulta las carteleras de torneos activos e inscribe tus gallos'}
+            Organiza torneos, administra el pesaje y realiza los cotejos
           </p>
         </div>
 
-        {/* Solo visible para Galleras / Organizadores */}
-        {esOrganizador && (
-          <button
-            onClick={() => setShowModal(true)}
-            className='flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold px-4 py-2 rounded-xl text-sm transition'
-          >
-            <Plus size={16} /> Crear Torneo
-          </button>
-        )}
+        <button
+          onClick={abrirModalCrear}
+          className='flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold px-4 py-2 rounded-xl text-sm transition'
+        >
+          <Plus size={16} /> Crear Torneo
+        </button>
       </div>
 
       {loading ? (
@@ -152,9 +160,27 @@ export default function TorneosPage() {
                   <span className='text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20'>
                     {torneo.estado}
                   </span>
-                  <span className='flex items-center gap-1 text-xs text-slate-500'>
-                    <Calendar size={13} /> {torneo.fecha}
-                  </span>
+                  <div className='flex items-center gap-2'>
+                    <span className='flex items-center gap-1 text-xs text-slate-500'>
+                      <Calendar size={13} /> {torneo.fecha}
+                    </span>
+                    <button
+                      onClick={() => abrirModalEditar(torneo)}
+                      className='text-slate-400 hover:text-amber-400 p-1 transition'
+                      title='Editar datos del torneo'
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                    <button
+                      onClick={() =>
+                        handleDeleteTorneo(torneo.id, torneo.nombre)
+                      }
+                      className='text-slate-500 hover:text-red-400 p-1 transition'
+                      title='Eliminar torneo'
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
                 <h3 className='text-lg font-bold text-slate-100'>
                   {torneo.nombre}
@@ -169,10 +195,7 @@ export default function TorneosPage() {
                   href={`/dashboard/torneos/${torneo.id}`}
                   className='flex items-center justify-between w-full bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl text-xs font-semibold transition'
                 >
-                  {esOrganizador
-                    ? 'Mesa Técnica y Cotejo'
-                    : 'Ver Cartelera y Pesaje'}{' '}
-                  <ArrowRight size={14} />
+                  Mesa Técnica y Cotejo <ArrowRight size={14} />
                 </Link>
               </div>
             </div>
@@ -180,12 +203,12 @@ export default function TorneosPage() {
         </div>
       )}
 
-      {/* Modal Crear Torneo */}
-      {showModal && esOrganizador && (
+      {/* Modal Crear / Editar Torneo */}
+      {showModal && (
         <div className='fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50'>
           <div className='bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6'>
             <h2 className='text-lg font-bold text-slate-100 mb-4'>
-              Nuevo Torneo
+              {editandoId ? 'Editar Torneo' : 'Nuevo Torneo'}
             </h2>
             <form onSubmit={handleSubmit} className='space-y-4'>
               <div>
@@ -197,15 +220,15 @@ export default function TorneosPage() {
                   required
                   value={form.nombre}
                   onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-                  className='w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100'
-                  placeholder='Ej. Derby Internacional'
+                  className='w-full uppercase bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100'
+                  placeholder='EJ. DERBY CARACAS'
                 />
               </div>
 
               <div className='grid grid-cols-2 gap-3'>
                 <div>
                   <label className='block text-xs text-slate-400 mb-1'>
-                    Fecha
+                    Fecha *
                   </label>
                   <input
                     type='date'
@@ -229,7 +252,7 @@ export default function TorneosPage() {
                     onChange={(e) =>
                       setForm({
                         ...form,
-                        max_comodines: parseInt(e.target.value),
+                        max_comodines: parseInt(e.target.value) || 0,
                       })
                     }
                     className='w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100'
@@ -237,10 +260,28 @@ export default function TorneosPage() {
                 </div>
               </div>
 
+              <div>
+                <label className='block text-xs text-slate-400 mb-1'>
+                  Estado del Evento
+                </label>
+                <select
+                  value={form.estado}
+                  onChange={(e) => setForm({ ...form, estado: e.target.value })}
+                  className='w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 font-semibold'
+                >
+                  <option value='PESAJE'>PESAJE</option>
+                  <option value='EN RUEDO'>EN RUEDO</option>
+                  <option value='FINALIZADO'>FINALIZADO</option>
+                </select>
+              </div>
+
               <div className='flex justify-end gap-3 pt-4 border-t border-slate-800'>
                 <button
                   type='button'
-                  onClick={() => setShowModal(false)}
+                  onClick={() => {
+                    setShowModal(false)
+                    setEditandoId(null)
+                  }}
                   className='px-4 py-2 rounded-lg text-sm text-slate-400 hover:bg-slate-800 transition'
                 >
                   Cancelar
@@ -249,7 +290,7 @@ export default function TorneosPage() {
                   type='submit'
                   className='bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold px-4 py-2 rounded-lg text-sm transition'
                 >
-                  Crear Evento
+                  {editandoId ? 'Actualizar Evento' : 'Crear Evento'}
                 </button>
               </div>
             </form>
