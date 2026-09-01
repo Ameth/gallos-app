@@ -21,6 +21,7 @@ import {
   BarChart3,
   Edit2,
   FileDown,
+  FileText,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -61,6 +62,48 @@ export default function TorneoDetallePage({ params }) {
   const [observacionesPelea, setObservacionesPelea] = useState('')
   const timerRef = useRef(null)
 
+  // Estados para el Modal de Modificación Rápida de Fallo
+  const [modalModificarAbierto, setModalModificarAbierto] = useState(false)
+  const [peleaAEditar, setPeleaAEditar] = useState(null)
+  const [nuevoResultado, setNuevoResultado] = useState('')
+  const [nuevoGanadorId, setNuevoGanadorId] = useState(null)
+  const [editandoFalloLoading, setEditandoFalloLoading] = useState(false)
+
+  // Abrir el modal cargando la pelea seleccionada
+  const handleAbrirModalModificarFallo = (pelea) => {
+    setPeleaAEditar(pelea)
+    setNuevoResultado(pelea.resultado || '')
+    setNuevoGanadorId(pelea.ganador_id || null)
+    setModalModificarAbierto(true)
+  }
+
+  // Guardar la corrección del fallo en Supabase
+  const handleGuardarModificacionFallo = async () => {
+    if (!peleaAEditar) return
+    setEditandoFalloLoading(true)
+
+    const payload = {
+      resultado: nuevoResultado,
+      ganador_id: nuevoGanadorId,
+      estado_transmision:
+        nuevoResultado === 'pendiente' ? 'en_espera' : 'finalizado',
+    }
+
+    const { error } = await supabase
+      .from('peleas')
+      .update(payload)
+      .eq('id', peleaAEditar.id)
+
+    if (error) {
+      alert('Error al actualizar el fallo: ' + error.message)
+    } else {
+      setModalModificarAbierto(false)
+      setPeleaAEditar(null)
+      await cargarDatos()
+    }
+    setEditandoFalloLoading(false)
+  }
+
   const cargarDatos = async () => {
     setLoading(true)
 
@@ -76,7 +119,7 @@ export default function TorneoDetallePage({ params }) {
       .order('created_at', { ascending: false })
     const { data: pData } = await supabase
       .from('peleas')
-      .select('*, gallo_azul:gallo_azul_id(*), gallo_blanco:gallo_blanco_id(*)')
+      .select('*, gallo_azul:gallo_azul_id(*), gallo_rojo:gallo_rojo_id(*)')
       .eq('torneo_id', torneoId)
       .order('numero_pelea', { ascending: true })
 
@@ -84,6 +127,24 @@ export default function TorneoDetallePage({ params }) {
     if (iData) setInscripciones(iData)
     if (pData) setPeleas(pData)
     setLoading(false)
+  }
+
+  const formatearTiempoPelea = (pelea) => {
+    const ms =
+      Number(pelea.duracion_milisegundos) ||
+      (pelea.duracion_segundos ? pelea.duracion_segundos * 1000 : 0)
+    if (!ms || ms === 0) return '00:00,00'
+
+    const totalSegundos = Math.floor(ms / 1000)
+    const minutos = Math.floor(totalSegundos / 60)
+    const segundos = totalSegundos % 60
+    const centesimas = Math.floor((ms % 1000) / 10)
+
+    const mm = minutos.toString().padStart(2, '0')
+    const ss = segundos.toString().padStart(2, '0')
+    const cs = centesimas.toString().padStart(2, '0')
+
+    return `${mm}:${ss},${cs}`
   }
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -109,8 +170,8 @@ export default function TorneoDetallePage({ params }) {
     return `${mins.toString().padStart(2, '0')}:${segs.toString().padStart(2, '0')}`
   }
 
-  // Exportar Listado Oficial de Cotejos a PDF con Agrupación por Combate
-  const handleExportarPDF = () => {
+  // Exportar Listado Oficial de Cotejos a PDF con Logo e Identidad Gráfica
+  const handleExportarPDF = async () => {
     if (peleas.length === 0) {
       alert('No hay peleas armadas para exportar.')
       return
@@ -122,35 +183,49 @@ export default function TorneoDetallePage({ params }) {
       format: 'letter',
     })
 
+    // Cargar e incrustar el logo en el encabezado del PDF
+    try {
+      const response = await fetch('/logo-mi-querencia.png')
+      const blob = await response.blob()
+      const base64Logo = await new Promise((resolve) => {
+        const reader = new FileReader()
+        reader.onloadend = () => resolve(reader.result)
+        reader.readAsDataURL(blob)
+      })
+      // Colocar el logo en la esquina superior derecha (ancho: 36mm, alto: 24mm)
+      doc.addImage(base64Logo, 'PNG', 225, 6, 36, 24)
+    } catch (err) {
+      console.warn('No se pudo cargar el logo en el PDF:', err)
+    }
+
     // Encabezado Institucional
     doc.setFontSize(16)
     doc.setFont('helvetica', 'bold')
-    doc.text('CENTRO TURÍSTICO MI QUERENCIA', 14, 15)
+    doc.text('CENTRO AGROTURÍSTICO MI QUERENCIA', 14, 14)
 
     doc.setFontSize(11)
     doc.setFont('helvetica', 'normal')
     doc.text(
       `PROGRAMACIÓN OFICIAL DE COMBATES - ${torneo?.nombre?.toUpperCase() || 'TORNEO'}`,
       14,
-      21,
+      20,
     )
 
     doc.setFontSize(9)
     doc.setTextColor(100)
     doc.text(
-      `Fecha del Evento: ${torneo?.fecha || 'N/A'}  |  Total de Peleas: ${peleas.length}`,
+      `Fecha del Evento: ${torneo?.fecha || 'N/A'}  |  Total de Peleas: ${peleas.length}  |  Falcón - Venezuela`,
       14,
-      26,
+      25,
     )
 
-    // Armar filas de la tabla con agrupación de celda (rowSpan)
+    // Armar filas de la tabla con agrupación por combate
     const filasTabla = []
 
     peleas.forEach((pelea) => {
       const gAzul = pelea.gallo_azul
-      const gRojo = pelea.gallo_blanco
+      const gRojo = pelea.gallo_rojo
 
-      // Fila 1: Esquina Azul (Incluye la celda agrupada con rowSpan: 2)
       filasTabla.push([
         {
           content: `Pelea #${pelea.numero_pelea}`,
@@ -176,7 +251,6 @@ export default function TorneoDetallePage({ params }) {
         gAzul.observaciones || '-',
       ])
 
-      // Fila 2: Esquina Roja (No lleva la columna 0 porque ya la ocupa el rowSpan)
       filasTabla.push([
         gRojo.numero_anillo || '-',
         `${gRojo.nombre_equipo || '-'} (ROJO)`,
@@ -194,7 +268,7 @@ export default function TorneoDetallePage({ params }) {
     })
 
     autoTable(doc, {
-      startY: 30,
+      startY: 31,
       head: [
         [
           'N°',
@@ -240,7 +314,6 @@ export default function TorneoDetallePage({ params }) {
       },
       didParseCell: (data) => {
         if (data.section === 'body') {
-          // Si es la celda agrupada del N° de pelea, mantenemos su estilo gris neutro
           if (
             data.column.index === 0 &&
             data.cell.raw &&
@@ -248,18 +321,354 @@ export default function TorneoDetallePage({ params }) {
           ) {
             return
           }
-
-          // Colores sutiles por esquina (Fila par = Azul, Fila impar = Rojo)
           if (data.row.index % 2 === 0) {
-            data.cell.styles.fillColor = [240, 246, 255] // Azul suave
+            data.cell.styles.fillColor = [240, 246, 255]
           } else {
-            data.cell.styles.fillColor = [254, 242, 242] // Rojo suave
+            data.cell.styles.fillColor = [254, 242, 242]
           }
         }
       },
     })
 
     const nombreArchivo = `Cotejos_${torneo?.nombre?.replace(/\s+/g, '_') || 'Torneo'}.pdf`
+    doc.save(nombreArchivo)
+  }
+
+  // Generador de Reporte PDF Oficial de Resultados Finales y Balance Estadístico
+  const handleExportarResultadosPDF = async () => {
+    if (peleas.length === 0) {
+      alert('No hay combates registrados para exportar.')
+      return
+    }
+
+    const doc = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: 'letter',
+    })
+
+    // 1. Cargar Logo Oficial
+    let base64Logo = null
+    try {
+      const response = await fetch('/logo-mi-querencia.png')
+      const blob = await response.blob()
+      base64Logo = await new Promise((resolve) => {
+        const reader = new FileReader()
+        reader.onloadend = () => resolve(reader.result)
+        reader.readAsDataURL(blob)
+      })
+    } catch (err) {
+      console.warn('No se pudo cargar el logo:', err)
+    }
+
+    // 2. Cálculos Estadísticos Oficiales
+    const totalPeleasCasadas = peleas.length
+    let totalMarcadasAMV = 0
+    let totalLibres = 0
+    let totalDescasadas = 0
+    let totalNoAptas = 0
+    let totalNulas = 0
+    let totalTablas = 0
+    let totalDecididas = 0
+
+    peleas.forEach((p) => {
+      const esMarcada =
+        p.gallo_azul?.tipo_espuela?.toLowerCase().includes('marcado') ||
+        p.gallo_rojo?.tipo_espuela?.toLowerCase().includes('marcado')
+      if (esMarcada) {
+        totalMarcadasAMV++
+      } else {
+        totalLibres++
+      }
+
+      if (p.resultado === 'descasada') totalDescasadas++
+      else if (p.resultado === 'no_apta') totalNoAptas++
+      else if (p.resultado === 'nula') totalNulas++
+      else if (p.resultado === 'tabla') totalTablas++
+      else if (
+        p.resultado === 'azul_gano' ||
+        p.resultado === 'blanco_gano' ||
+        p.resultado === 'rojo_gano'
+      ) {
+        totalDecididas++
+      }
+    })
+
+    const totalEfectuadas = totalTablas + totalDecididas
+    const porcTablas =
+      totalEfectuadas > 0
+        ? ((totalTablas / totalEfectuadas) * 100).toFixed(2)
+        : '0.00'
+    const porcDecididas =
+      totalEfectuadas > 0
+        ? ((totalDecididas / totalEfectuadas) * 100).toFixed(2)
+        : '0.00'
+
+    // Formateador de tiempo a hh:mm:ss,cs
+    const formatearTiempoCompleto = (ms) => {
+      if (!ms || ms === 0) return '00:00:00,00'
+      const totalSeg = Math.floor(ms / 1000)
+      const horas = Math.floor(totalSeg / 3600)
+        .toString()
+        .padStart(2, '0')
+      const minutos = Math.floor((totalSeg % 3600) / 60)
+        .toString()
+        .padStart(2, '0')
+      const segundos = (totalSeg % 60).toString().padStart(2, '0')
+      const centesimas = Math.floor((ms % 1000) / 10)
+        .toString()
+        .padStart(2, '0')
+      return `${horas}:${minutos}:${segundos},${centesimas}`
+    }
+
+    // 3. Estructuración de Filas para la Tabla de Combates
+    const filasResultados = []
+
+    peleas.forEach((p) => {
+      const gAzul = p.gallo_azul
+      const gRojo = p.gallo_rojo
+      const tiempoStr = formatearTiempoCompleto(
+        p.duracion_milisegundos ||
+          (p.duracion_segundos ? p.duracion_segundos * 1000 : 0),
+      )
+
+      let ganadorTexto = 'PENDIENTE'
+      if (p.resultado === 'azul_gano')
+        ganadorTexto = `ARO ${gAzul?.numero_anillo || 'AZUL'}`
+      else if (p.resultado === 'rojo_gano')
+        ganadorTexto = `ARO ${gRojo?.numero_anillo || 'ROJO'}`
+      else if (p.resultado === 'tabla') ganadorTexto = 'TABLA'
+      else if (p.resultado === 'descasada') ganadorTexto = 'DESCASADA'
+      else if (p.resultado === 'no_apta') ganadorTexto = 'NO APTA'
+
+      // Fila 1: Gallo Azul
+      filasResultados.push([
+        {
+          content: `${p.numero_pelea}`,
+          rowSpan: 2,
+          styles: {
+            halign: 'center',
+            valign: 'middle',
+            fontStyle: 'bold',
+            fillColor: [245, 247, 250],
+          },
+        },
+        gAzul?.numero_anillo || '-',
+        `${gAzul?.nombre_equipo || '-'} (AZUL)`,
+        gAzul?.color_pluma || '-',
+        gAzul?.peso_libras ?? '-',
+        Number(gAzul?.peso_onzas || 0).toFixed(2),
+        gAzul?.tipo_espuela || 'Libre',
+        gAzul?.marca_amv || `M${gAzul?.marca || 0}`,
+        gAzul?.placa_amv || 'S/P',
+        {
+          content: ganadorTexto,
+          rowSpan: 2,
+          styles: {
+            halign: 'center',
+            valign: 'middle',
+            fontStyle: 'bold',
+            textColor: [153, 27, 27],
+          },
+        },
+        {
+          content: tiempoStr,
+          rowSpan: 2,
+          styles: {
+            halign: 'center',
+            valign: 'middle',
+            fontStyle: 'bold',
+            font: 'courier',
+          },
+        },
+      ])
+
+      // Fila 2: Gallo Rojo
+      filasResultados.push([
+        gRojo?.numero_anillo || '-',
+        `${gRojo?.nombre_equipo || '-'} (ROJO)`,
+        gRojo?.color_pluma || '-',
+        gRojo?.peso_libras ?? '-',
+        Number(gRojo?.peso_onzas || 0).toFixed(2),
+        gRojo?.tipo_espuela || 'Libre',
+        gRojo?.marca_amv || `M${gRojo?.marca || 0}`,
+        gRojo?.placa_amv || 'S/P',
+      ])
+    })
+
+    // 4. Dibujar Páginas de Resultados
+    autoTable(doc, {
+      startY: 28,
+      head: [
+        [
+          'N°',
+          'Aro',
+          'Equipo / Cuerda',
+          'Color',
+          'Lbs',
+          'Oz',
+          'Espuela',
+          'Marca',
+          'Placa AMV',
+          'Ganador',
+          'Tiempo Final',
+        ],
+      ],
+      body: filasResultados,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [15, 23, 42],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 7.5,
+        halign: 'center',
+      },
+      styles: {
+        fontSize: 7,
+        cellPadding: 2,
+        valign: 'middle',
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 10 },
+        1: { halign: 'center', fontStyle: 'bold', cellWidth: 14 },
+        2: { fontStyle: 'bold', cellWidth: 46 },
+        3: { halign: 'center', cellWidth: 18 },
+        4: { halign: 'center', cellWidth: 10 },
+        5: { halign: 'center', cellWidth: 12 },
+        6: { halign: 'center', cellWidth: 24 },
+        7: { halign: 'center', cellWidth: 16 },
+        8: { halign: 'center', cellWidth: 20 },
+        9: { halign: 'center', cellWidth: 28 },
+        10: { halign: 'center', cellWidth: 32 },
+      },
+      didDrawPage: (data) => {
+        // Membrete en cada página
+        if (base64Logo) {
+          doc.addImage(base64Logo, 'PNG', 232, 5, 30, 20)
+        }
+        doc.setFontSize(14)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(15, 23, 42)
+        doc.text('CENTRO AGROTURÍSTICO MI QUERENCIA', 14, 12)
+
+        doc.setFontSize(9.5)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(153, 119, 56)
+        doc.text(
+          `RESULTADOS OFICIALES DE COMBATES - ${torneo?.nombre?.toUpperCase() || 'TORNEO'}`,
+          14,
+          17,
+        )
+
+        doc.setFontSize(7.5)
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(100)
+        doc.text(
+          `Fecha del Evento: ${torneo?.fecha || 'N/A'}  |  Falcón - Venezuela  |  Pág. ${doc.internal.getNumberOfPages()}`,
+          14,
+          22,
+        )
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body') {
+          if (
+            (data.column.index === 0 || data.column.index >= 9) &&
+            data.cell.raw &&
+            typeof data.cell.raw === 'object'
+          ) {
+            return
+          }
+          if (data.row.index % 2 === 0) {
+            data.cell.styles.fillColor = [240, 246, 255]
+          } else {
+            data.cell.styles.fillColor = [254, 242, 242]
+          }
+        }
+      },
+    })
+
+    // 5. Agregar Hoja Final de Resumen Estadístico
+    doc.addPage('letter', 'portrait') // Hoja vertical formal para el cierre
+
+    if (base64Logo) {
+      doc.addImage(base64Logo, 'PNG', 145, 10, 48, 32)
+    }
+
+    doc.setFontSize(18)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(15, 23, 42)
+    doc.text('CENTRO AGROTURÍSTICO MI QUERENCIA', 14, 20)
+
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(153, 119, 56)
+    doc.text(`BALANCE Y RESUMEN ESTADÍSTICO FINAL`, 14, 27)
+
+    doc.setFontSize(8.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(100)
+    doc.text(
+      `Torneo: ${torneo?.nombre?.toUpperCase()}  |  Fecha: ${torneo?.fecha}`,
+      14,
+      33,
+    )
+
+    // Cuadro de Resumen Estadístico Oficial
+    autoTable(doc, {
+      startY: 42,
+      head: [['INDICADOR DEL EVENTO', 'CANTIDAD / VALOR']],
+      body: [
+        ['REGLAMENTO APLICADO', 'REGLAMENTO VENEZOLANO PURO'],
+        ['TOTAL PELEAS CASADAS', `${totalPeleasCasadas}`],
+        ['PELEAS MARCADAS AMV', `${totalMarcadasAMV}`],
+        ['PELEAS LIBRES', `${totalLibres}`],
+        ['PELEAS DESCASADAS', `${totalDescasadas}`],
+        ['PELEAS NO APTAS', `${totalNoAptas}`],
+        ['PELEAS NULAS', `${totalNulas}`],
+        ['PELEAS EFECTUADAS (TOTAL ENTRADAS A RUEDO)', `${totalEfectuadas}`],
+        ['PELEAS TABLAS (EMPATES)', `${totalTablas}  (${porcTablas} %)`],
+        [
+          'PELEAS DECIDIDAS (CON GANADOR)',
+          `${totalDecididas}  (${porcDecididas} %)`,
+        ],
+      ],
+      theme: 'grid',
+      headStyles: {
+        fillColor: [153, 119, 56],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 9.5,
+        halign: 'left',
+      },
+      styles: {
+        fontSize: 8.5,
+        cellPadding: 3.5,
+        valign: 'middle',
+      },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 120, textColor: [30, 41, 59] },
+        1: {
+          halign: 'center',
+          fontStyle: 'bold',
+          font: 'courier',
+          textColor: [153, 27, 27],
+        },
+      },
+    })
+
+    // Firmas de Conformidad
+    const posFinalY = doc.lastAutoTable.finalY + 35
+    doc.setDrawColor(180)
+    doc.line(20, posFinalY, 80, posFinalY)
+    doc.line(125, posFinalY, 185, posFinalY)
+
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(60)
+    doc.text('MESA TÉCNICA Y PESAJE', 50, posFinalY + 5, { align: 'center' })
+    doc.text('JUEZ DE VALLA PRINCIPAL', 155, posFinalY + 5, { align: 'center' })
+
+    const nombreArchivo = `Resultados_Finales_${torneo?.nombre?.replace(/\s+/g, '_') || 'Torneo'}.pdf`
     doc.save(nombreArchivo)
   }
 
@@ -396,7 +805,7 @@ export default function TorneoDetallePage({ params }) {
     const gallosEnPeleas = new Set()
     peleas.forEach((p) => {
       gallosEnPeleas.add(p.gallo_azul_id)
-      gallosEnPeleas.add(p.gallo_blanco_id)
+      gallosEnPeleas.add(p.gallo_rojo_id)
     })
 
     const disponibles = inscripciones.filter((i) => !gallosEnPeleas.has(i.id))
@@ -418,7 +827,7 @@ export default function TorneoDetallePage({ params }) {
       torneo_id: torneoId,
       numero_pelea: numeroPeleaActual++,
       gallo_azul_id: p.gallo_azul.id,
-      gallo_blanco_id: p.gallo_blanco.id,
+      gallo_rojo_id: p.gallo_rojo.id,
       tipo_casamiento: 'automatico',
     }))
 
@@ -434,7 +843,7 @@ export default function TorneoDetallePage({ params }) {
       torneo_id: torneoId,
       numero_pelea: peleas.length + 1,
       gallo_azul_id: galloSeleccionadoManual.id,
-      gallo_blanco_id: rivalSeleccionadoManual.id,
+      gallo_rojo_id: rivalSeleccionadoManual.id,
       tipo_casamiento: 'manual_forzado',
     }
 
@@ -462,15 +871,13 @@ export default function TorneoDetallePage({ params }) {
   const idsCasados = new Set()
   peleas.forEach((p) => {
     idsCasados.add(p.gallo_azul_id)
-    idsCasados.add(p.gallo_blanco_id)
+    idsCasados.add(p.gallo_rojo_id)
   })
   const gallosPendientes = inscripciones.filter((i) => !idsCasados.has(i.id))
 
   const peleasFinalizadas = peleas.filter((p) => p.resultado !== 'pendiente')
   const totalAzulGano = peleas.filter((p) => p.resultado === 'azul_gano').length
-  const totalBlancoGano = peleas.filter(
-    (p) => p.resultado === 'blanco_gano',
-  ).length
+  const totalRojoGano = peleas.filter((p) => p.resultado === 'rojo_gano').length
   const totalTablas = peleas.filter((p) => p.resultado === 'tabla').length
 
   const opcionesMarcasAMV = [
@@ -523,6 +930,19 @@ export default function TorneoDetallePage({ params }) {
             className='flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition shadow-lg shadow-amber-500/10'
           >
             <Sparkles size={14} /> Ejecutar Cotejo
+          </button>
+          <Link
+            href={`/dashboard/torneos/${torneoId}/arbitraje`}
+            className='flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition shadow-lg shadow-amber-500/10'
+          >
+            <Swords size={14} /> Mesa de Arbitraje en Vivo
+          </Link>
+          <button
+            onClick={handleExportarResultadosPDF}
+            className='flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition shadow-lg shadow-emerald-600/10'
+            title='Descargar Reporte Completo de Resultados y Resumen Estadístico'
+          >
+            <FileText size={14} /> Descargar Resultados (PDF)
           </button>
         </div>
       </div>
@@ -624,153 +1044,148 @@ export default function TorneoDetallePage({ params }) {
           ) : (
             <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
               {peleas.map((pelea) => {
+                const gAzul = pelea.gallo_azul
+                const gRojo = pelea.gallo_rojo
                 const diffPeso = Math.abs(
-                  pelea.gallo_azul.peso_total_onzas -
-                    pelea.gallo_blanco.peso_total_onzas,
-                )
-                const estaTerminada = pelea.resultado !== 'pendiente'
+                  (gAzul?.peso_onzas || 0) - (gRojo?.peso_onzas || 0),
+                ).toFixed(2)
+                const tieneResultado =
+                  pelea.resultado && pelea.resultado !== 'pendiente'
 
                 return (
                   <div
                     key={pelea.id}
-                    className={`bg-slate-900 border rounded-2xl p-4 relative transition ${estaTerminada ? 'border-emerald-500/30' : 'border-slate-800'}`}
+                    className='bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between relative shadow-lg'
                   >
-                    <div className='flex justify-between items-center mb-3'>
-                      <span className='text-xs font-black uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-0.5 rounded-md'>
-                        Pelea #{pelea.numero_pelea}
+                    {/* Encabezado de la Tarjeta */}
+                    <div className='flex items-center justify-between mb-3'>
+                      <span className='bg-amber-500 text-slate-950 text-xs font-black px-3 py-1 rounded-lg uppercase tracking-wider'>
+                        PELEA #{pelea.numero_pelea}
                       </span>
-                      <div className='flex items-center gap-2'>
-                        {pelea.tipo_casamiento === 'manual_forzado' && (
-                          <span className='text-[10px] bg-red-500/10 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded font-bold'>
-                            Manual
-                          </span>
-                        )}
-                        <button
-                          onClick={() => handleDeletePelea(pelea.id)}
-                          className='text-slate-500 hover:text-red-400 transition'
-                          title='Descasar pelea'
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => handleEliminarPelea(pelea.id)}
+                        className='text-slate-600 hover:text-red-400 p-1 rounded-lg transition'
+                        title='Eliminar Pelea'
+                      >
+                        <Trash2 size={15} />
+                      </button>
                     </div>
 
-                    {/* Tarjeta de Pelea */}
-                    <div className='grid grid-cols-11 gap-2 items-center text-center'>
+                    {/* Confrontación: Azul vs Rojo */}
+                    <div className='grid grid-cols-11 gap-2 items-center my-2'>
                       {/* Esquina Azul */}
                       <div
-                        className={`col-span-5 p-3 rounded-xl border ${pelea.resultado === 'azul_gano' ? 'bg-blue-950/60 border-blue-500 ring-1 ring-blue-500' : 'bg-blue-950/30 border-blue-900/40'}`}
+                        className={`col-span-5 p-3 rounded-xl border transition ${
+                          pelea.resultado === 'azul_gano'
+                            ? 'bg-blue-950/60 border-blue-500 ring-1 ring-blue-400'
+                            : 'bg-slate-950/40 border-slate-800'
+                        }`}
                       >
-                        <span className='text-[10px] font-bold text-blue-400 uppercase tracking-wider block'>
+                        <span className='text-[10px] font-bold text-blue-400 uppercase block'>
                           Esquina Azul
                         </span>
-                        <p className='font-bold text-slate-100 text-sm mt-1'>
-                          {pelea.gallo_azul.nombre_equipo}
+                        <p className='font-bold text-slate-100 text-sm truncate'>
+                          {gAzul?.nombre_equipo || '---'}
                         </p>
-                        <p className='text-xs text-slate-400'>
-                          Aro: {pelea.gallo_azul.numero_anillo} •{' '}
-                          {pelea.gallo_azul.color_pluma || 'Pluma N/A'}
+                        <p className='text-[11px] text-slate-400'>
+                          Aro: {gAzul?.numero_anillo} • {gAzul?.color_pluma}
                         </p>
-                        <p className='text-xs font-bold text-blue-300 mt-1'>
-                          {pelea.gallo_azul.peso_libras}{' '}
-                          <span className='text-[11px] font-normal text-blue-400/80'>
-                            Lb
-                          </span>{' '}
-                          {Number(pelea.gallo_azul.peso_onzas || 0).toFixed(2)}{' '}
-                          <span className='text-[11px] font-normal text-blue-400/80'>
-                            Oz
-                          </span>
+                        <p className='text-xs font-black text-amber-400 mt-1'>
+                          {gAzul?.peso_libras} Lb{' '}
+                          {Number(gAzul?.peso_onzas || 0).toFixed(2)} Oz
                         </p>
-                        <div className='flex items-center justify-center gap-1 text-[10px] text-slate-400 mt-0.5'>
-                          <span>
-                            {pelea.gallo_azul.placa_amv &&
-                            pelea.gallo_azul.placa_amv !== 'S/P'
-                              ? `(${pelea.gallo_azul.marca_amv || `M${pelea.gallo_azul.marca || 0}`} N•AMV-${pelea.gallo_azul.placa_amv.replace(/^AMV-?/i, '')})`
-                              : pelea.gallo_azul.marca_amv ||
-                                `M${pelea.gallo_azul.marca || 0}`}
-                          </span>
-                          <span>•</span>
-                          <span>{pelea.gallo_azul.tipo_espuela}</span>
-                        </div>
+                        <p className='text-[10px] text-slate-500'>
+                          {gAzul?.placa_amv && gAzul?.placa_amv !== 'S/P'
+                            ? `(${gAzul?.marca_amv || `M${gAzul?.marca}`} N•AMV-${gAzul?.placa_amv.replace(/^AMV-?/i, '')})`
+                            : gAzul?.marca_amv || `M${gAzul?.marca || 0}`}{' '}
+                          • {gAzul?.tipo_espuela || 'Libre'}
+                        </p>
                         {pelea.resultado === 'azul_gano' && (
-                          <span className='inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400 mt-1'>
-                            <Award size={13} /> GANADOR
+                          <span className='inline-block text-[10px] font-black text-emerald-400 mt-2 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20'>
+                            🏆 GANADOR
                           </span>
                         )}
                       </div>
 
-                      <div className='col-span-1 text-slate-500 font-black text-xs'>
+                      <div className='col-span-1 text-center font-black italic text-slate-600 text-xs'>
                         VS
                       </div>
 
                       {/* Esquina Roja */}
                       <div
-                        className={`col-span-5 p-3 rounded-xl border ${pelea.resultado === 'blanco_gano' ? 'bg-red-950/60 border-red-500 ring-1 ring-red-500' : 'bg-red-950/20 border-red-900/30'}`}
+                        className={`col-span-5 p-3 rounded-xl border transition ${
+                          pelea.resultado === 'blanco_gano' ||
+                          pelea.resultado === 'rojo_gano'
+                            ? 'bg-red-950/60 border-red-500 ring-1 ring-red-400'
+                            : 'bg-slate-950/40 border-slate-800'
+                        }`}
                       >
-                        <span className='text-[10px] font-bold text-red-400 uppercase tracking-wider block'>
+                        <span className='text-[10px] font-bold text-red-400 uppercase block'>
                           Esquina Roja
                         </span>
-                        <p className='font-bold text-slate-100 text-sm mt-1'>
-                          {pelea.gallo_blanco.nombre_equipo}
+                        <p className='font-bold text-slate-100 text-sm truncate'>
+                          {gRojo?.nombre_equipo || '---'}
                         </p>
-                        <p className='text-xs text-slate-400'>
-                          Aro: {pelea.gallo_blanco.numero_anillo} •{' '}
-                          {pelea.gallo_blanco.color_pluma || 'Pluma N/A'}
+                        <p className='text-[11px] text-slate-400'>
+                          Aro: {gRojo?.numero_anillo} • {gRojo?.color_pluma}
                         </p>
-                        <p className='text-xs font-bold text-red-300 mt-1'>
-                          {pelea.gallo_blanco.peso_libras}{' '}
-                          <span className='text-[11px] font-normal text-red-400/80'>
-                            Lb
-                          </span>{' '}
-                          {Number(pelea.gallo_blanco.peso_onzas || 0).toFixed(
-                            2,
-                          )}{' '}
-                          <span className='text-[11px] font-normal text-red-400/80'>
-                            Oz
-                          </span>
+                        <p className='text-xs font-black text-amber-400 mt-1'>
+                          {gRojo?.peso_libras} Lb{' '}
+                          {Number(gRojo?.peso_onzas || 0).toFixed(2)} Oz
                         </p>
-                        <div className='flex items-center justify-center gap-1 text-[10px] text-slate-400 mt-0.5'>
-                          <span>
-                            {pelea.gallo_blanco.placa_amv &&
-                            pelea.gallo_blanco.placa_amv !== 'S/P'
-                              ? `(${pelea.gallo_blanco.marca_amv || `M${pelea.gallo_blanco.marca || 0}`} N•AMV-${pelea.gallo_blanco.placa_amv.replace(/^AMV-?/i, '')})`
-                              : pelea.gallo_blanco.marca_amv ||
-                                `M${pelea.gallo_blanco.marca || 0}`}
-                          </span>
-                          <span>•</span>
-                          <span>{pelea.gallo_blanco.tipo_espuela}</span>
-                        </div>
-                        {pelea.resultado === 'blanco_gano' && (
-                          <span className='inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400 mt-1'>
-                            <Award size={13} /> GANADOR
+                        <p className='text-[10px] text-slate-500'>
+                          {gRojo?.placa_amv && gRojo?.placa_amv !== 'S/P'
+                            ? `(${gRojo?.marca_amv || `M${gRojo?.marca}`} N•AMV-${gRojo?.placa_amv.replace(/^AMV-?/i, '')})`
+                            : gRojo?.marca_amv || `M${gRojo?.marca || 0}`}{' '}
+                          • {gRojo?.tipo_espuela || 'Libre'}
+                        </p>
+                        {(pelea.resultado === 'blanco_gano' ||
+                          pelea.resultado === 'rojo_gano') && (
+                          <span className='inline-block text-[10px] font-black text-emerald-400 mt-2 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20'>
+                            🏆 GANADOR
                           </span>
                         )}
                       </div>
                     </div>
 
-                    {/* Delta de onzas formateado */}
-                    <div className='mt-4 pt-3 border-t border-slate-800 flex justify-between items-center text-xs'>
-                      <div className='text-slate-400'>
-                        {estaTerminada ? (
-                          <span className='font-mono text-amber-400'>
-                            ⏱ {formatoTiempo(pelea.duracion_segundos)}
+                    {/* Pie de la Tarjeta */}
+                    <div className='border-t border-slate-800 pt-2.5 mt-2 flex items-center justify-between'>
+                      <div className='flex items-center gap-2'>
+                        <span className='text-[11px] text-slate-500 font-mono'>
+                          Δ {diffPeso} oz
+                        </span>
+                        {(pelea.duracion_milisegundos > 0 ||
+                          pelea.duracion_segundos > 0) && (
+                          <span className='text-xs font-mono font-black text-amber-400 flex items-center gap-1.5 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800 tracking-wider'>
+                            <span>⏱</span> {formatearTiempoPelea(pelea)}
                           </span>
-                        ) : (
-                          <span>Δ {Number(diffPeso || 0).toFixed(2)} oz</span>
+                        )}
+                        {pelea.resultado === 'tabla' && (
+                          <span className='text-[10px] font-black text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded'>
+                            TABLA
+                          </span>
+                        )}
+                        {pelea.resultado === 'descasada' && (
+                          <span className='text-[10px] font-black text-red-400 bg-red-500/10 px-2 py-0.5 rounded'>
+                            DESCASADA
+                          </span>
                         )}
                       </div>
 
-                      <button
-                        onClick={() => abrirMesaArbitraje(pelea)}
-                        className={`px-3 py-1.5 rounded-lg font-bold text-xs transition flex items-center gap-1.5 ${
-                          estaTerminada
-                            ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                            : 'bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-md'
-                        }`}
-                      >
-                        <Swords size={13} />{' '}
-                        {estaTerminada ? 'Modificar Fallo' : 'Arbitrar Pelea'}
-                      </button>
+                      {/* Único botón de acción rápida cuando la pelea ya finalizó */}
+                      {tieneResultado ? (
+                        <button
+                          onClick={() => handleAbrirModalModificarFallo(pelea)}
+                          className='text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition flex items-center gap-1.5'
+                        >
+                          <Swords size={13} className='text-amber-400' />{' '}
+                          Modificar Fallo
+                        </button>
+                      ) : (
+                        <span className='text-[11px] font-semibold text-slate-500 italic'>
+                          Pendiente en Ruedo
+                        </span>
+                      )}
                     </div>
                   </div>
                 )
@@ -1362,6 +1777,156 @@ export default function TorneoDetallePage({ params }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Modificar Fallo Rápido */}
+      {modalModificarAbierto && peleaAEditar && (
+        <div className='fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4'>
+          <div className='bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200'>
+            <div className='flex items-center justify-between border-b border-slate-800 pb-3'>
+              <div>
+                <h3 className='text-base font-black text-amber-500 uppercase tracking-wider'>
+                  Modificar Fallo - Pelea #{peleaAEditar.numero_pelea}
+                </h3>
+                <p className='text-xs text-slate-400'>
+                  {peleaAEditar.gallo_rojo?.nombre_equipo} vs{' '}
+                  {peleaAEditar.gallo_azul?.nombre_equipo}
+                </p>
+              </div>
+              <button
+                onClick={() => setModalModificarAbierto(false)}
+                className='text-slate-500 hover:text-slate-300 text-sm font-bold p-1'
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Opciones de Ganador */}
+            <div className='space-y-2'>
+              <span className='text-[11px] font-bold text-slate-400 uppercase tracking-wider block'>
+                Seleccionar Vencedor Oficial:
+              </span>
+
+              <div className='grid grid-cols-2 gap-2.5'>
+                {/* Opción Cuerda Roja */}
+                <button
+                  type='button'
+                  onClick={() => {
+                    setNuevoResultado('rojo_gano')
+                    setNuevoGanadorId(peleaAEditar.gallo_rojo?.id)
+                  }}
+                  className={`p-3 rounded-2xl border-2 text-left transition ${
+                    nuevoResultado === 'blanco_gano' ||
+                    nuevoResultado === 'rojo_gano'
+                      ? 'bg-red-950/80 border-red-500 ring-2 ring-red-400'
+                      : 'bg-slate-950/50 border-slate-800 hover:bg-red-950/30'
+                  }`}
+                >
+                  <span className='text-[10px] font-black text-red-400 uppercase block'>
+                    CUERDA ROJA
+                  </span>
+                  <p className='text-xs font-bold text-white truncate mt-0.5'>
+                    {peleaAEditar.gallo_rojo?.nombre_equipo}
+                  </p>
+                  <span className='text-[10px] text-slate-400'>
+                    Aro: {peleaAEditar.gallo_rojo?.numero_anillo}
+                  </span>
+                </button>
+
+                {/* Opción Cuerda Azul */}
+                <button
+                  type='button'
+                  onClick={() => {
+                    setNuevoResultado('azul_gano')
+                    setNuevoGanadorId(peleaAEditar.gallo_azul?.id)
+                  }}
+                  className={`p-3 rounded-2xl border-2 text-left transition ${
+                    nuevoResultado === 'azul_gano'
+                      ? 'bg-blue-950/80 border-blue-500 ring-2 ring-blue-400'
+                      : 'bg-slate-950/50 border-slate-800 hover:bg-blue-950/30'
+                  }`}
+                >
+                  <span className='text-[10px] font-black text-blue-400 uppercase block'>
+                    CUERDA AZUL
+                  </span>
+                  <p className='text-xs font-bold text-white truncate mt-0.5'>
+                    {peleaAEditar.gallo_azul?.nombre_equipo}
+                  </p>
+                  <span className='text-[10px] text-slate-400'>
+                    Aro: {peleaAEditar.gallo_azul?.numero_anillo}
+                  </span>
+                </button>
+              </div>
+
+              {/* Opciones Especiales */}
+              <div className='grid grid-cols-3 gap-2 pt-2'>
+                <button
+                  type='button'
+                  onClick={() => {
+                    setNuevoResultado('tabla')
+                    setNuevoGanadorId(null)
+                  }}
+                  className={`py-2 px-2 rounded-xl text-xs font-bold border transition ${
+                    nuevoResultado === 'tabla'
+                      ? 'bg-amber-500/20 border-amber-500 text-amber-400'
+                      : 'bg-slate-950/40 border-slate-800 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  Tabla
+                </button>
+
+                <button
+                  type='button'
+                  onClick={() => {
+                    setNuevoResultado('descasada')
+                    setNuevoGanadorId(null)
+                  }}
+                  className={`py-2 px-2 rounded-xl text-xs font-bold border transition ${
+                    nuevoResultado === 'descasada'
+                      ? 'bg-red-500/20 border-red-500 text-red-400'
+                      : 'bg-slate-950/40 border-slate-800 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  Descasada
+                </button>
+
+                <button
+                  type='button'
+                  onClick={() => {
+                    setNuevoResultado('pendiente')
+                    setNuevoGanadorId(null)
+                  }}
+                  className={`py-2 px-2 rounded-xl text-xs font-bold border transition ${
+                    nuevoResultado === 'pendiente'
+                      ? 'bg-slate-700 border-slate-500 text-slate-200'
+                      : 'bg-slate-950/40 border-slate-800 text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  Pendiente
+                </button>
+              </div>
+            </div>
+
+            {/* Acciones del Modal */}
+            <div className='flex gap-2 pt-3 border-t border-slate-800'>
+              <button
+                type='button'
+                onClick={() => setModalModificarAbierto(false)}
+                className='flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition'
+              >
+                Cancelar
+              </button>
+              <button
+                type='button'
+                disabled={editandoFalloLoading}
+                onClick={handleGuardarModificacionFallo}
+                className='flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 text-xs font-black transition shadow-lg shadow-amber-500/10'
+              >
+                {editandoFalloLoading ? 'Guardando...' : 'Guardar Cambio'}
+              </button>
+            </div>
           </div>
         </div>
       )}

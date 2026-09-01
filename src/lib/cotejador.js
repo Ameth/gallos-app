@@ -82,7 +82,7 @@ export function generarCotejoAutomatico(inscripcionesDisponibles) {
       casadosIds.add(mejorRival.id)
       peleasGeneradas.push({
         gallo_azul: galloA,
-        gallo_blanco: mejorRival, // Actúa como esquina roja
+        gallo_rojo: mejorRival, // Actúa como esquina roja
         tipo_casamiento: 'automatico',
       })
     }

@@ -36,22 +36,19 @@ export default function LoginPage() {
   return (
     <div className='min-h-screen bg-slate-950 flex items-center justify-center p-4'>
       <div className='w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden'>
-        {/* Logo Institucional */}
+        {/* Logo Institucional Oficial */}
         <div className='text-center mb-6'>
-          <div className='relative w-28 h-28 mx-auto mb-3 rounded-2xl overflow-hidden border border-amber-500/30 shadow-lg bg-black'>
+          <div className='relative w-64 h-36 mx-auto mb-2'>
             <Image
-              src='/logo-mi-querencia.jpeg'
-              alt='Centro Turístico Mi Querencia'
+              src='/logo-mi-querencia.png'
+              alt='Centro Agroturístico Mi Querencia'
               fill
-              className='object-cover'
+              className='object-contain'
               priority
             />
           </div>
-          <h1 className='text-lg font-black text-slate-100 tracking-wider'>
-            CENTRO TURÍSTICO MI QUERENCIA
-          </h1>
-          <p className='text-[11px] text-amber-500 font-semibold uppercase tracking-widest mt-0.5'>
-            Panel de Cotejo y Control de Valla
+          <p className='text-[11px] text-amber-500 font-bold uppercase tracking-widest'>
+            Panel de Control de Valla y Cotejos
           </p>
         </div>
 
@@ -76,7 +73,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className='w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-3 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition'
-                placeholder='admin@miquerencia.com'
+                placeholder='admin@miquerenciaclub.com'
               />
             </div>
           </div>
@@ -110,8 +107,8 @@ export default function LoginPage() {
         </form>
 
         <div className='mt-6 text-center border-t border-slate-800 pt-3'>
-          <p className='text-[11px] text-slate-500'>
-            Falcón - Venezuela • Sistema de Uso Exclusivo
+          <p className='text-[11px] text-slate-500 font-medium'>
+            Falcón - Venezuela • Uso Exclusivo Autorizado
           </p>
         </div>
       </div>

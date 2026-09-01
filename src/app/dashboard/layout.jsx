@@ -22,16 +22,19 @@ export default async function DashboardLayout({ children }) {
 
   return (
     <div className='min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans'>
-      <header className='border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-6 py-2.5 sticky top-0 z-50'>
+      <header className='border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-6 py-2 sticky top-0 z-50'>
         <div className='max-w-7xl mx-auto flex items-center justify-between'>
           <div className='flex items-center gap-6'>
-            <Link href='/dashboard/torneos' className='flex items-center gap-3'>
-              <div className='relative w-10 h-10 rounded-full overflow-hidden border border-amber-500/40 shadow-sm bg-black flex-shrink-0'>
+            <Link
+              href='/dashboard/torneos'
+              className='flex items-center gap-3 group'
+            >
+              <div className='relative w-14 h-10 flex-shrink-0 transition transform group-hover:scale-105'>
                 <Image
-                  src='/logo-mi-querencia.jpeg'
-                  alt='Centro Turístico Mi Querencia'
+                  src='/logo-mi-querencia.png'
+                  alt='Centro Agroturístico Mi Querencia'
                   fill
-                  className='object-cover'
+                  className='object-contain'
                   priority
                 />
               </div>
@@ -40,7 +43,7 @@ export default async function DashboardLayout({ children }) {
                   MI QUERENCIA
                 </span>
                 <span className='text-[10px] text-slate-400 font-semibold block leading-tight'>
-                  Centro Turístico
+                  Centro Agroturístico • Falcón
                 </span>
               </div>
             </Link>
