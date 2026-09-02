@@ -1,12 +1,25 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Trophy, Calendar, ArrowRight, Edit2, Trash2 } from 'lucide-react'
+import {
+  Plus,
+  Trophy,
+  Calendar,
+  ArrowRight,
+  Edit2,
+  Trash2,
+  Loader2,
+} from 'lucide-react'
 import Link from 'next/link'
 
 export default function TorneosPage() {
   const supabase = createClient()
+
+  const router = useRouter()
+  const [torneoCargandoId, setTorneoCargandoId] = useState(null)
+
   const [torneos, setTorneos] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -191,12 +204,32 @@ export default function TorneosPage() {
               </div>
 
               <div className='mt-5 pt-3 border-t border-slate-800/80'>
-                <Link
-                  href={`/dashboard/torneos/${torneo.id}`}
-                  className='flex items-center justify-between w-full bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl text-xs font-semibold transition'
+                <button
+                  type='button'
+                  onClick={() => {
+                    setTorneoCargandoId(torneo.id)
+                    router.push(`/dashboard/torneos/${torneo.id}`)
+                  }}
+                  disabled={torneoCargandoId === torneo.id}
+                  className='cursor-pointer disabled:cursor-not-allowed disabled:opacity-75 flex items-center justify-between w-full bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl text-xs font-semibold transition active:scale-95'
                 >
-                  Mesa Técnica y Cotejo <ArrowRight size={14} />
-                </Link>
+                  {torneoCargandoId === torneo.id ? (
+                    <>
+                      <span className='flex items-center gap-2 text-amber-400'>
+                        <Loader2 size={14} className='animate-spin' />
+                        Abriendo Torneo...
+                      </span>
+                      <span className='text-[10px] text-slate-400 italic'>
+                        Cargando datos
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Mesa Técnica y Cotejo</span>
+                      <ArrowRight size={14} />
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           ))}

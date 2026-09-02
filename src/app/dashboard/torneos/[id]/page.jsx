@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, use, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { generarCotejoAutomatico } from '@/lib/cotejador'
 import jsPDF from 'jspdf'
@@ -22,12 +23,17 @@ import {
   Edit2,
   FileDown,
   FileText,
+  Loader2,
 } from 'lucide-react'
 import Link from 'next/link'
 
 export default function TorneoDetallePage({ params }) {
   const { id: torneoId } = use(params)
   const supabase = createClient()
+
+  const router = useRouter() // Importar de 'next/navigation'
+  const [navegando, setNavegando] = useState(false)
+  const [mensajeNavegacion, setMensajeNavegacion] = useState('')
 
   const [torneo, setTorneo] = useState(null)
   const [inscripciones, setInscripciones] = useState([])
@@ -51,6 +57,8 @@ export default function TorneoDetallePage({ params }) {
     observaciones: '',
   })
 
+  const [guardandoPesaje, setGuardandoPesaje] = useState(false)
+
   // Modal Casamiento Manual
   const [galloSeleccionadoManual, setGalloSeleccionadoManual] = useState(null)
   const [rivalSeleccionadoManual, setRivalSeleccionadoManual] = useState(null)
@@ -68,6 +76,11 @@ export default function TorneoDetallePage({ params }) {
   const [nuevoResultado, setNuevoResultado] = useState('')
   const [nuevoGanadorId, setNuevoGanadorId] = useState(null)
   const [editandoFalloLoading, setEditandoFalloLoading] = useState(false)
+
+  // Estados de carga para la generación de PDFs
+  const [descargandoCarteleraPDF, setDescargandoCarteleraPDF] = useState(false)
+  const [descargandoResultadosPDF, setDescargandoResultadosPDF] =
+    useState(false)
 
   // Abrir el modal cargando la pelea seleccionada
   const handleAbrirModalModificarFallo = (pelea) => {
@@ -177,161 +190,169 @@ export default function TorneoDetallePage({ params }) {
       return
     }
 
-    const doc = new jsPDF({
-      orientation: 'landscape',
-      unit: 'mm',
-      format: 'letter',
-    })
-
-    // Cargar e incrustar el logo en el encabezado del PDF
+    setDescargandoCarteleraPDF(true)
     try {
-      const response = await fetch('/logo-mi-querencia.png')
-      const blob = await response.blob()
-      const base64Logo = await new Promise((resolve) => {
-        const reader = new FileReader()
-        reader.onloadend = () => resolve(reader.result)
-        reader.readAsDataURL(blob)
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'letter',
       })
-      // Colocar el logo en la esquina superior derecha (ancho: 36mm, alto: 24mm)
-      doc.addImage(base64Logo, 'PNG', 225, 6, 36, 24)
-    } catch (err) {
-      console.warn('No se pudo cargar el logo en el PDF:', err)
-    }
 
-    // Encabezado Institucional
-    doc.setFontSize(16)
-    doc.setFont('helvetica', 'bold')
-    doc.text('CENTRO AGROTURÍSTICO MI QUERENCIA', 14, 14)
+      // Cargar e incrustar el logo en el encabezado del PDF
+      try {
+        const response = await fetch('/logo-mi-querencia.png')
+        const blob = await response.blob()
+        const base64Logo = await new Promise((resolve) => {
+          const reader = new FileReader()
+          reader.onloadend = () => resolve(reader.result)
+          reader.readAsDataURL(blob)
+        })
+        // Colocar el logo en la esquina superior derecha (ancho: 36mm, alto: 24mm)
+        doc.addImage(base64Logo, 'PNG', 225, 6, 36, 24)
+      } catch (err) {
+        console.warn('No se pudo cargar el logo en el PDF:', err)
+      }
 
-    doc.setFontSize(11)
-    doc.setFont('helvetica', 'normal')
-    doc.text(
-      `PROGRAMACIÓN OFICIAL DE COMBATES - ${torneo?.nombre?.toUpperCase() || 'TORNEO'}`,
-      14,
-      20,
-    )
+      // Encabezado Institucional
+      doc.setFontSize(16)
+      doc.setFont('helvetica', 'bold')
+      doc.text('CENTRO AGROTURÍSTICO MI QUERENCIA', 14, 14)
 
-    doc.setFontSize(9)
-    doc.setTextColor(100)
-    doc.text(
-      `Fecha del Evento: ${torneo?.fecha || 'N/A'}  |  Total de Peleas: ${peleas.length}  |  Falcón - Venezuela`,
-      14,
-      25,
-    )
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'normal')
+      doc.text(
+        `PROGRAMACIÓN OFICIAL DE COMBATES - ${torneo?.nombre?.toUpperCase() || 'TORNEO'}`,
+        14,
+        20,
+      )
 
-    // Armar filas de la tabla con agrupación por combate
-    const filasTabla = []
+      doc.setFontSize(9)
+      doc.setTextColor(100)
+      doc.text(
+        `Fecha del Evento: ${torneo?.fecha || 'N/A'}  |  Total de Peleas: ${peleas.length}  |  Falcón - Venezuela`,
+        14,
+        25,
+      )
 
-    peleas.forEach((pelea) => {
-      const gAzul = pelea.gallo_azul
-      const gRojo = pelea.gallo_rojo
+      // Armar filas de la tabla con agrupación por combate
+      const filasTabla = []
 
-      filasTabla.push([
-        {
-          content: `Pelea #${pelea.numero_pelea}`,
-          rowSpan: 2,
-          styles: {
-            halign: 'center',
-            valign: 'middle',
-            fontStyle: 'bold',
-            fillColor: [245, 247, 250],
+      peleas.forEach((pelea) => {
+        const gAzul = pelea.gallo_azul
+        const gRojo = pelea.gallo_rojo
+
+        filasTabla.push([
+          {
+            content: `Pelea #${pelea.numero_pelea}`,
+            rowSpan: 2,
+            styles: {
+              halign: 'center',
+              valign: 'middle',
+              fontStyle: 'bold',
+              fillColor: [245, 247, 250],
+            },
           },
-        },
-        gAzul.numero_anillo || '-',
-        `${gAzul.nombre_equipo || '-'} (AZUL)`,
-        gAzul.color_pluma || '-',
-        gAzul.peso_libras ?? '-',
-        Number(gAzul.peso_onzas || 0).toFixed(2),
-        gAzul.comodines && gAzul.comodines.length > 0
-          ? gAzul.comodines.join(', ')
-          : 'NINGUNO',
-        gAzul.tipo_espuela || 'Libre',
-        gAzul.marca_amv || `M${gAzul.marca || 0}`,
-        gAzul.placa_amv || 'S/P',
-        gAzul.observaciones || '-',
-      ])
+          gAzul.numero_anillo || '-',
+          `${gAzul.nombre_equipo || '-'} (AZUL)`,
+          gAzul.color_pluma || '-',
+          gAzul.peso_libras ?? '-',
+          Number(gAzul.peso_onzas || 0).toFixed(2),
+          gAzul.comodines && gAzul.comodines.length > 0
+            ? gAzul.comodines.join(', ')
+            : 'NINGUNO',
+          gAzul.tipo_espuela || 'Libre',
+          gAzul.marca_amv || `M${gAzul.marca || 0}`,
+          gAzul.placa_amv || 'S/P',
+          gAzul.observaciones || '-',
+        ])
 
-      filasTabla.push([
-        gRojo.numero_anillo || '-',
-        `${gRojo.nombre_equipo || '-'} (ROJO)`,
-        gRojo.color_pluma || '-',
-        gRojo.peso_libras ?? '-',
-        Number(gRojo.peso_onzas || 0).toFixed(2),
-        gRojo.comodines && gRojo.comodines.length > 0
-          ? gRojo.comodines.join(', ')
-          : 'NINGUNO',
-        gRojo.tipo_espuela || 'Libre',
-        gRojo.marca_amv || `M${gRojo.marca || 0}`,
-        gRojo.placa_amv || 'S/P',
-        gRojo.observaciones || '-',
-      ])
-    })
+        filasTabla.push([
+          gRojo.numero_anillo || '-',
+          `${gRojo.nombre_equipo || '-'} (ROJO)`,
+          gRojo.color_pluma || '-',
+          gRojo.peso_libras ?? '-',
+          Number(gRojo.peso_onzas || 0).toFixed(2),
+          gRojo.comodines && gRojo.comodines.length > 0
+            ? gRojo.comodines.join(', ')
+            : 'NINGUNO',
+          gRojo.tipo_espuela || 'Libre',
+          gRojo.marca_amv || `M${gRojo.marca || 0}`,
+          gRojo.placa_amv || 'S/P',
+          gRojo.observaciones || '-',
+        ])
+      })
 
-    autoTable(doc, {
-      startY: 31,
-      head: [
-        [
-          'N°',
-          'Aro',
-          'Equipo',
-          'Color',
-          'Libra',
-          'Onza',
-          'Comodin',
-          'Espuela',
-          'Marca AMV',
-          'Placa AMV',
-          'Observaciones',
+      autoTable(doc, {
+        startY: 31,
+        head: [
+          [
+            'N°',
+            'Aro',
+            'Equipo',
+            'Color',
+            'Libra',
+            'Onza',
+            'Comodin',
+            'Espuela',
+            'Marca AMV',
+            'Placa AMV',
+            'Observaciones',
+          ],
         ],
-      ],
-      body: filasTabla,
-      theme: 'grid',
-      headStyles: {
-        fillColor: [30, 41, 59],
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 8,
-        halign: 'center',
-      },
-      styles: {
-        fontSize: 7.5,
-        cellPadding: 2.2,
-        valign: 'middle',
-        overflow: 'linebreak',
-      },
-      columnStyles: {
-        0: { halign: 'center', cellWidth: 20 },
-        1: { halign: 'center', fontStyle: 'bold', cellWidth: 16 },
-        2: { fontStyle: 'bold', cellWidth: 40 },
-        3: { halign: 'center', cellWidth: 18 },
-        4: { halign: 'center', cellWidth: 12 },
-        5: { halign: 'center', cellWidth: 14 },
-        6: { cellWidth: 28 },
-        7: { halign: 'center', cellWidth: 22 },
-        8: { halign: 'center', cellWidth: 18 },
-        9: { halign: 'center', cellWidth: 20 },
-        10: { cellWidth: 'auto' },
-      },
-      didParseCell: (data) => {
-        if (data.section === 'body') {
-          if (
-            data.column.index === 0 &&
-            data.cell.raw &&
-            typeof data.cell.raw === 'object'
-          ) {
-            return
+        body: filasTabla,
+        theme: 'grid',
+        headStyles: {
+          fillColor: [30, 41, 59],
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          fontSize: 8,
+          halign: 'center',
+        },
+        styles: {
+          fontSize: 7.5,
+          cellPadding: 2.2,
+          valign: 'middle',
+          overflow: 'linebreak',
+        },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 20 },
+          1: { halign: 'center', fontStyle: 'bold', cellWidth: 16 },
+          2: { fontStyle: 'bold', cellWidth: 40 },
+          3: { halign: 'center', cellWidth: 18 },
+          4: { halign: 'center', cellWidth: 12 },
+          5: { halign: 'center', cellWidth: 14 },
+          6: { cellWidth: 28 },
+          7: { halign: 'center', cellWidth: 22 },
+          8: { halign: 'center', cellWidth: 18 },
+          9: { halign: 'center', cellWidth: 20 },
+          10: { cellWidth: 'auto' },
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body') {
+            if (
+              data.column.index === 0 &&
+              data.cell.raw &&
+              typeof data.cell.raw === 'object'
+            ) {
+              return
+            }
+            if (data.row.index % 2 === 0) {
+              data.cell.styles.fillColor = [240, 246, 255]
+            } else {
+              data.cell.styles.fillColor = [254, 242, 242]
+            }
           }
-          if (data.row.index % 2 === 0) {
-            data.cell.styles.fillColor = [240, 246, 255]
-          } else {
-            data.cell.styles.fillColor = [254, 242, 242]
-          }
-        }
-      },
-    })
+        },
+      })
 
-    const nombreArchivo = `Cotejos_${torneo?.nombre?.replace(/\s+/g, '_') || 'Torneo'}.pdf`
-    doc.save(nombreArchivo)
+      const nombreArchivo = `Cotejos_${torneo?.nombre?.replace(/\s+/g, '_') || 'Torneo'}.pdf`
+      doc.save(nombreArchivo)
+    } catch (err) {
+      console.error(err)
+      alert('Error al generar el PDF de cotejos.')
+    } finally {
+      setDescargandoCarteleraPDF(false)
+    }
   }
 
   // Generador de Reporte PDF Oficial de Resultados Finales y Balance Estadístico
@@ -341,335 +362,345 @@ export default function TorneoDetallePage({ params }) {
       return
     }
 
-    const doc = new jsPDF({
-      orientation: 'landscape',
-      unit: 'mm',
-      format: 'letter',
-    })
-
-    // 1. Cargar Logo Oficial
-    let base64Logo = null
+    setDescargandoResultadosPDF(true)
     try {
-      const response = await fetch('/logo-mi-querencia.png')
-      const blob = await response.blob()
-      base64Logo = await new Promise((resolve) => {
-        const reader = new FileReader()
-        reader.onloadend = () => resolve(reader.result)
-        reader.readAsDataURL(blob)
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'letter',
       })
-    } catch (err) {
-      console.warn('No se pudo cargar el logo:', err)
-    }
 
-    // 2. Cálculos Estadísticos Oficiales
-    const totalPeleasCasadas = peleas.length
-    let totalMarcadasAMV = 0
-    let totalLibres = 0
-    let totalDescasadas = 0
-    let totalNoAptas = 0
-    let totalNulas = 0
-    let totalTablas = 0
-    let totalDecididas = 0
-
-    peleas.forEach((p) => {
-      const esMarcada =
-        p.gallo_azul?.tipo_espuela?.toLowerCase().includes('marcado') ||
-        p.gallo_rojo?.tipo_espuela?.toLowerCase().includes('marcado')
-      if (esMarcada) {
-        totalMarcadasAMV++
-      } else {
-        totalLibres++
+      // 1. Cargar Logo Oficial
+      let base64Logo = null
+      try {
+        const response = await fetch('/logo-mi-querencia.png')
+        const blob = await response.blob()
+        base64Logo = await new Promise((resolve) => {
+          const reader = new FileReader()
+          reader.onloadend = () => resolve(reader.result)
+          reader.readAsDataURL(blob)
+        })
+      } catch (err) {
+        console.warn('No se pudo cargar el logo:', err)
       }
 
-      if (p.resultado === 'descasada') totalDescasadas++
-      else if (p.resultado === 'no_apta') totalNoAptas++
-      else if (p.resultado === 'nula') totalNulas++
-      else if (p.resultado === 'tabla') totalTablas++
-      else if (
-        p.resultado === 'azul_gano' ||
-        p.resultado === 'blanco_gano' ||
-        p.resultado === 'rojo_gano'
-      ) {
-        totalDecididas++
+      // 2. Cálculos Estadísticos Oficiales
+      const totalPeleasCasadas = peleas.length
+      let totalMarcadasAMV = 0
+      let totalLibres = 0
+      let totalDescasadas = 0
+      let totalNoAptas = 0
+      let totalNulas = 0
+      let totalTablas = 0
+      let totalDecididas = 0
+
+      peleas.forEach((p) => {
+        const esMarcada =
+          p.gallo_azul?.tipo_espuela?.toLowerCase().includes('marcado') ||
+          p.gallo_rojo?.tipo_espuela?.toLowerCase().includes('marcado')
+        if (esMarcada) {
+          totalMarcadasAMV++
+        } else {
+          totalLibres++
+        }
+
+        if (p.resultado === 'descasada') totalDescasadas++
+        else if (p.resultado === 'no_apta') totalNoAptas++
+        else if (p.resultado === 'nula') totalNulas++
+        else if (p.resultado === 'tabla') totalTablas++
+        else if (
+          p.resultado === 'azul_gano' ||
+          p.resultado === 'blanco_gano' ||
+          p.resultado === 'rojo_gano'
+        ) {
+          totalDecididas++
+        }
+      })
+
+      const totalEfectuadas = totalTablas + totalDecididas
+      const porcTablas =
+        totalEfectuadas > 0
+          ? ((totalTablas / totalEfectuadas) * 100).toFixed(2)
+          : '0.00'
+      const porcDecididas =
+        totalEfectuadas > 0
+          ? ((totalDecididas / totalEfectuadas) * 100).toFixed(2)
+          : '0.00'
+
+      // Formateador de tiempo a hh:mm:ss,cs
+      const formatearTiempoCompleto = (ms) => {
+        if (!ms || ms === 0) return '00:00:00,00'
+        const totalSeg = Math.floor(ms / 1000)
+        const horas = Math.floor(totalSeg / 3600)
+          .toString()
+          .padStart(2, '0')
+        const minutos = Math.floor((totalSeg % 3600) / 60)
+          .toString()
+          .padStart(2, '0')
+        const segundos = (totalSeg % 60).toString().padStart(2, '0')
+        const centesimas = Math.floor((ms % 1000) / 10)
+          .toString()
+          .padStart(2, '0')
+        return `${horas}:${minutos}:${segundos},${centesimas}`
       }
-    })
 
-    const totalEfectuadas = totalTablas + totalDecididas
-    const porcTablas =
-      totalEfectuadas > 0
-        ? ((totalTablas / totalEfectuadas) * 100).toFixed(2)
-        : '0.00'
-    const porcDecididas =
-      totalEfectuadas > 0
-        ? ((totalDecididas / totalEfectuadas) * 100).toFixed(2)
-        : '0.00'
+      // 3. Estructuración de Filas para la Tabla de Combates
+      const filasResultados = []
 
-    // Formateador de tiempo a hh:mm:ss,cs
-    const formatearTiempoCompleto = (ms) => {
-      if (!ms || ms === 0) return '00:00:00,00'
-      const totalSeg = Math.floor(ms / 1000)
-      const horas = Math.floor(totalSeg / 3600)
-        .toString()
-        .padStart(2, '0')
-      const minutos = Math.floor((totalSeg % 3600) / 60)
-        .toString()
-        .padStart(2, '0')
-      const segundos = (totalSeg % 60).toString().padStart(2, '0')
-      const centesimas = Math.floor((ms % 1000) / 10)
-        .toString()
-        .padStart(2, '0')
-      return `${horas}:${minutos}:${segundos},${centesimas}`
-    }
+      peleas.forEach((p) => {
+        const gAzul = p.gallo_azul
+        const gRojo = p.gallo_rojo
+        const tiempoStr = formatearTiempoCompleto(
+          p.duracion_milisegundos ||
+            (p.duracion_segundos ? p.duracion_segundos * 1000 : 0),
+        )
 
-    // 3. Estructuración de Filas para la Tabla de Combates
-    const filasResultados = []
+        let ganadorTexto = 'PENDIENTE'
+        if (p.resultado === 'azul_gano')
+          ganadorTexto = `ARO ${gAzul?.numero_anillo || 'AZUL'}`
+        else if (p.resultado === 'rojo_gano')
+          ganadorTexto = `ARO ${gRojo?.numero_anillo || 'ROJO'}`
+        else if (p.resultado === 'tabla') ganadorTexto = 'TABLA'
+        else if (p.resultado === 'descasada') ganadorTexto = 'DESCASADA'
+        else if (p.resultado === 'no_apta') ganadorTexto = 'NO APTA'
 
-    peleas.forEach((p) => {
-      const gAzul = p.gallo_azul
-      const gRojo = p.gallo_rojo
-      const tiempoStr = formatearTiempoCompleto(
-        p.duracion_milisegundos ||
-          (p.duracion_segundos ? p.duracion_segundos * 1000 : 0),
+        // Fila 1: Gallo Azul
+        filasResultados.push([
+          {
+            content: `${p.numero_pelea}`,
+            rowSpan: 2,
+            styles: {
+              halign: 'center',
+              valign: 'middle',
+              fontStyle: 'bold',
+              fillColor: [245, 247, 250],
+            },
+          },
+          gAzul?.numero_anillo || '-',
+          `${gAzul?.nombre_equipo || '-'} (AZUL)`,
+          gAzul?.color_pluma || '-',
+          gAzul?.peso_libras ?? '-',
+          Number(gAzul?.peso_onzas || 0).toFixed(2),
+          gAzul?.tipo_espuela || 'Libre',
+          gAzul?.marca_amv || `M${gAzul?.marca || 0}`,
+          gAzul?.placa_amv || 'S/P',
+          {
+            content: ganadorTexto,
+            rowSpan: 2,
+            styles: {
+              halign: 'center',
+              valign: 'middle',
+              fontStyle: 'bold',
+              textColor: [153, 27, 27],
+            },
+          },
+          {
+            content: tiempoStr,
+            rowSpan: 2,
+            styles: {
+              halign: 'center',
+              valign: 'middle',
+              fontStyle: 'bold',
+              font: 'courier',
+            },
+          },
+        ])
+
+        // Fila 2: Gallo Rojo
+        filasResultados.push([
+          gRojo?.numero_anillo || '-',
+          `${gRojo?.nombre_equipo || '-'} (ROJO)`,
+          gRojo?.color_pluma || '-',
+          gRojo?.peso_libras ?? '-',
+          Number(gRojo?.peso_onzas || 0).toFixed(2),
+          gRojo?.tipo_espuela || 'Libre',
+          gRojo?.marca_amv || `M${gRojo?.marca || 0}`,
+          gRojo?.placa_amv || 'S/P',
+        ])
+      })
+
+      // 4. Dibujar Páginas de Resultados
+      autoTable(doc, {
+        startY: 28,
+        head: [
+          [
+            'N°',
+            'Aro',
+            'Equipo / Cuerda',
+            'Color',
+            'Lbs',
+            'Oz',
+            'Espuela',
+            'Marca',
+            'Placa AMV',
+            'Ganador',
+            'Tiempo Final',
+          ],
+        ],
+        body: filasResultados,
+        theme: 'grid',
+        headStyles: {
+          fillColor: [15, 23, 42],
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          fontSize: 7.5,
+          halign: 'center',
+        },
+        styles: {
+          fontSize: 7,
+          cellPadding: 2,
+          valign: 'middle',
+        },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 10 },
+          1: { halign: 'center', fontStyle: 'bold', cellWidth: 14 },
+          2: { fontStyle: 'bold', cellWidth: 46 },
+          3: { halign: 'center', cellWidth: 18 },
+          4: { halign: 'center', cellWidth: 10 },
+          5: { halign: 'center', cellWidth: 12 },
+          6: { halign: 'center', cellWidth: 24 },
+          7: { halign: 'center', cellWidth: 16 },
+          8: { halign: 'center', cellWidth: 20 },
+          9: { halign: 'center', cellWidth: 28 },
+          10: { halign: 'center', cellWidth: 32 },
+        },
+        didDrawPage: (data) => {
+          // Membrete en cada página
+          if (base64Logo) {
+            doc.addImage(base64Logo, 'PNG', 232, 5, 30, 20)
+          }
+          doc.setFontSize(14)
+          doc.setFont('helvetica', 'bold')
+          doc.setTextColor(15, 23, 42)
+          doc.text('CENTRO AGROTURÍSTICO MI QUERENCIA', 14, 12)
+
+          doc.setFontSize(9.5)
+          doc.setFont('helvetica', 'bold')
+          doc.setTextColor(153, 119, 56)
+          doc.text(
+            `RESULTADOS OFICIALES DE COMBATES - ${torneo?.nombre?.toUpperCase() || 'TORNEO'}`,
+            14,
+            17,
+          )
+
+          doc.setFontSize(7.5)
+          doc.setFont('helvetica', 'normal')
+          doc.setTextColor(100)
+          doc.text(
+            `Fecha del Evento: ${torneo?.fecha || 'N/A'}  |  Falcón - Venezuela  |  Pág. ${doc.internal.getNumberOfPages()}`,
+            14,
+            22,
+          )
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body') {
+            if (
+              (data.column.index === 0 || data.column.index >= 9) &&
+              data.cell.raw &&
+              typeof data.cell.raw === 'object'
+            ) {
+              return
+            }
+            if (data.row.index % 2 === 0) {
+              data.cell.styles.fillColor = [240, 246, 255]
+            } else {
+              data.cell.styles.fillColor = [254, 242, 242]
+            }
+          }
+        },
+      })
+
+      // 5. Agregar Hoja Final de Resumen Estadístico
+      doc.addPage('letter', 'portrait') // Hoja vertical formal para el cierre
+
+      if (base64Logo) {
+        doc.addImage(base64Logo, 'PNG', 145, 10, 48, 32)
+      }
+
+      doc.setFontSize(18)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(15, 23, 42)
+      doc.text('CENTRO AGROTURÍSTICO MI QUERENCIA', 14, 20)
+
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(153, 119, 56)
+      doc.text(`BALANCE Y RESUMEN ESTADÍSTICO FINAL`, 14, 27)
+
+      doc.setFontSize(8.5)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(100)
+      doc.text(
+        `Torneo: ${torneo?.nombre?.toUpperCase()}  |  Fecha: ${torneo?.fecha}`,
+        14,
+        33,
       )
 
-      let ganadorTexto = 'PENDIENTE'
-      if (p.resultado === 'azul_gano')
-        ganadorTexto = `ARO ${gAzul?.numero_anillo || 'AZUL'}`
-      else if (p.resultado === 'rojo_gano')
-        ganadorTexto = `ARO ${gRojo?.numero_anillo || 'ROJO'}`
-      else if (p.resultado === 'tabla') ganadorTexto = 'TABLA'
-      else if (p.resultado === 'descasada') ganadorTexto = 'DESCASADA'
-      else if (p.resultado === 'no_apta') ganadorTexto = 'NO APTA'
-
-      // Fila 1: Gallo Azul
-      filasResultados.push([
-        {
-          content: `${p.numero_pelea}`,
-          rowSpan: 2,
-          styles: {
-            halign: 'center',
-            valign: 'middle',
-            fontStyle: 'bold',
-            fillColor: [245, 247, 250],
-          },
+      // Cuadro de Resumen Estadístico Oficial
+      autoTable(doc, {
+        startY: 42,
+        head: [['INDICADOR DEL EVENTO', 'CANTIDAD / VALOR']],
+        body: [
+          ['REGLAMENTO APLICADO', 'REGLAMENTO VENEZOLANO PURO'],
+          ['TOTAL PELEAS CASADAS', `${totalPeleasCasadas}`],
+          ['PELEAS MARCADAS AMV', `${totalMarcadasAMV}`],
+          ['PELEAS LIBRES', `${totalLibres}`],
+          ['PELEAS DESCASADAS', `${totalDescasadas}`],
+          ['PELEAS NO APTAS', `${totalNoAptas}`],
+          ['PELEAS NULAS', `${totalNulas}`],
+          ['PELEAS EFECTUADAS (TOTAL ENTRADAS A RUEDO)', `${totalEfectuadas}`],
+          ['PELEAS TABLAS (EMPATES)', `${totalTablas}  (${porcTablas} %)`],
+          [
+            'PELEAS DECIDIDAS (CON GANADOR)',
+            `${totalDecididas}  (${porcDecididas} %)`,
+          ],
+        ],
+        theme: 'grid',
+        headStyles: {
+          fillColor: [153, 119, 56],
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          fontSize: 9.5,
+          halign: 'left',
         },
-        gAzul?.numero_anillo || '-',
-        `${gAzul?.nombre_equipo || '-'} (AZUL)`,
-        gAzul?.color_pluma || '-',
-        gAzul?.peso_libras ?? '-',
-        Number(gAzul?.peso_onzas || 0).toFixed(2),
-        gAzul?.tipo_espuela || 'Libre',
-        gAzul?.marca_amv || `M${gAzul?.marca || 0}`,
-        gAzul?.placa_amv || 'S/P',
-        {
-          content: ganadorTexto,
-          rowSpan: 2,
-          styles: {
+        styles: {
+          fontSize: 8.5,
+          cellPadding: 3.5,
+          valign: 'middle',
+        },
+        columnStyles: {
+          0: { fontStyle: 'bold', cellWidth: 120, textColor: [30, 41, 59] },
+          1: {
             halign: 'center',
-            valign: 'middle',
             fontStyle: 'bold',
+            font: 'courier',
             textColor: [153, 27, 27],
           },
         },
-        {
-          content: tiempoStr,
-          rowSpan: 2,
-          styles: {
-            halign: 'center',
-            valign: 'middle',
-            fontStyle: 'bold',
-            font: 'courier',
-          },
-        },
-      ])
+      })
 
-      // Fila 2: Gallo Rojo
-      filasResultados.push([
-        gRojo?.numero_anillo || '-',
-        `${gRojo?.nombre_equipo || '-'} (ROJO)`,
-        gRojo?.color_pluma || '-',
-        gRojo?.peso_libras ?? '-',
-        Number(gRojo?.peso_onzas || 0).toFixed(2),
-        gRojo?.tipo_espuela || 'Libre',
-        gRojo?.marca_amv || `M${gRojo?.marca || 0}`,
-        gRojo?.placa_amv || 'S/P',
-      ])
-    })
+      // Firmas de Conformidad
+      const posFinalY = doc.lastAutoTable.finalY + 35
+      doc.setDrawColor(180)
+      doc.line(20, posFinalY, 80, posFinalY)
+      doc.line(125, posFinalY, 185, posFinalY)
 
-    // 4. Dibujar Páginas de Resultados
-    autoTable(doc, {
-      startY: 28,
-      head: [
-        [
-          'N°',
-          'Aro',
-          'Equipo / Cuerda',
-          'Color',
-          'Lbs',
-          'Oz',
-          'Espuela',
-          'Marca',
-          'Placa AMV',
-          'Ganador',
-          'Tiempo Final',
-        ],
-      ],
-      body: filasResultados,
-      theme: 'grid',
-      headStyles: {
-        fillColor: [15, 23, 42],
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 7.5,
-        halign: 'center',
-      },
-      styles: {
-        fontSize: 7,
-        cellPadding: 2,
-        valign: 'middle',
-      },
-      columnStyles: {
-        0: { halign: 'center', cellWidth: 10 },
-        1: { halign: 'center', fontStyle: 'bold', cellWidth: 14 },
-        2: { fontStyle: 'bold', cellWidth: 46 },
-        3: { halign: 'center', cellWidth: 18 },
-        4: { halign: 'center', cellWidth: 10 },
-        5: { halign: 'center', cellWidth: 12 },
-        6: { halign: 'center', cellWidth: 24 },
-        7: { halign: 'center', cellWidth: 16 },
-        8: { halign: 'center', cellWidth: 20 },
-        9: { halign: 'center', cellWidth: 28 },
-        10: { halign: 'center', cellWidth: 32 },
-      },
-      didDrawPage: (data) => {
-        // Membrete en cada página
-        if (base64Logo) {
-          doc.addImage(base64Logo, 'PNG', 232, 5, 30, 20)
-        }
-        doc.setFontSize(14)
-        doc.setFont('helvetica', 'bold')
-        doc.setTextColor(15, 23, 42)
-        doc.text('CENTRO AGROTURÍSTICO MI QUERENCIA', 14, 12)
+      doc.setFontSize(8)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(60)
+      doc.text('MESA TÉCNICA Y PESAJE', 50, posFinalY + 5, { align: 'center' })
+      doc.text('JUEZ DE VALLA PRINCIPAL', 155, posFinalY + 5, {
+        align: 'center',
+      })
 
-        doc.setFontSize(9.5)
-        doc.setFont('helvetica', 'bold')
-        doc.setTextColor(153, 119, 56)
-        doc.text(
-          `RESULTADOS OFICIALES DE COMBATES - ${torneo?.nombre?.toUpperCase() || 'TORNEO'}`,
-          14,
-          17,
-        )
-
-        doc.setFontSize(7.5)
-        doc.setFont('helvetica', 'normal')
-        doc.setTextColor(100)
-        doc.text(
-          `Fecha del Evento: ${torneo?.fecha || 'N/A'}  |  Falcón - Venezuela  |  Pág. ${doc.internal.getNumberOfPages()}`,
-          14,
-          22,
-        )
-      },
-      didParseCell: (data) => {
-        if (data.section === 'body') {
-          if (
-            (data.column.index === 0 || data.column.index >= 9) &&
-            data.cell.raw &&
-            typeof data.cell.raw === 'object'
-          ) {
-            return
-          }
-          if (data.row.index % 2 === 0) {
-            data.cell.styles.fillColor = [240, 246, 255]
-          } else {
-            data.cell.styles.fillColor = [254, 242, 242]
-          }
-        }
-      },
-    })
-
-    // 5. Agregar Hoja Final de Resumen Estadístico
-    doc.addPage('letter', 'portrait') // Hoja vertical formal para el cierre
-
-    if (base64Logo) {
-      doc.addImage(base64Logo, 'PNG', 145, 10, 48, 32)
+      const nombreArchivo = `Resultados_Finales_${torneo?.nombre?.replace(/\s+/g, '_') || 'Torneo'}.pdf`
+      doc.save(nombreArchivo)
+    } catch (err) {
+      console.error(err)
+      alert('Error al generar el PDF de resultados.')
+    } finally {
+      setDescargandoResultadosPDF(false)
     }
-
-    doc.setFontSize(18)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(15, 23, 42)
-    doc.text('CENTRO AGROTURÍSTICO MI QUERENCIA', 14, 20)
-
-    doc.setFontSize(11)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(153, 119, 56)
-    doc.text(`BALANCE Y RESUMEN ESTADÍSTICO FINAL`, 14, 27)
-
-    doc.setFontSize(8.5)
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(100)
-    doc.text(
-      `Torneo: ${torneo?.nombre?.toUpperCase()}  |  Fecha: ${torneo?.fecha}`,
-      14,
-      33,
-    )
-
-    // Cuadro de Resumen Estadístico Oficial
-    autoTable(doc, {
-      startY: 42,
-      head: [['INDICADOR DEL EVENTO', 'CANTIDAD / VALOR']],
-      body: [
-        ['REGLAMENTO APLICADO', 'REGLAMENTO VENEZOLANO PURO'],
-        ['TOTAL PELEAS CASADAS', `${totalPeleasCasadas}`],
-        ['PELEAS MARCADAS AMV', `${totalMarcadasAMV}`],
-        ['PELEAS LIBRES', `${totalLibres}`],
-        ['PELEAS DESCASADAS', `${totalDescasadas}`],
-        ['PELEAS NO APTAS', `${totalNoAptas}`],
-        ['PELEAS NULAS', `${totalNulas}`],
-        ['PELEAS EFECTUADAS (TOTAL ENTRADAS A RUEDO)', `${totalEfectuadas}`],
-        ['PELEAS TABLAS (EMPATES)', `${totalTablas}  (${porcTablas} %)`],
-        [
-          'PELEAS DECIDIDAS (CON GANADOR)',
-          `${totalDecididas}  (${porcDecididas} %)`,
-        ],
-      ],
-      theme: 'grid',
-      headStyles: {
-        fillColor: [153, 119, 56],
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 9.5,
-        halign: 'left',
-      },
-      styles: {
-        fontSize: 8.5,
-        cellPadding: 3.5,
-        valign: 'middle',
-      },
-      columnStyles: {
-        0: { fontStyle: 'bold', cellWidth: 120, textColor: [30, 41, 59] },
-        1: {
-          halign: 'center',
-          fontStyle: 'bold',
-          font: 'courier',
-          textColor: [153, 27, 27],
-        },
-      },
-    })
-
-    // Firmas de Conformidad
-    const posFinalY = doc.lastAutoTable.finalY + 35
-    doc.setDrawColor(180)
-    doc.line(20, posFinalY, 80, posFinalY)
-    doc.line(125, posFinalY, 185, posFinalY)
-
-    doc.setFontSize(8)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(60)
-    doc.text('MESA TÉCNICA Y PESAJE', 50, posFinalY + 5, { align: 'center' })
-    doc.text('JUEZ DE VALLA PRINCIPAL', 155, posFinalY + 5, { align: 'center' })
-
-    const nombreArchivo = `Resultados_Finales_${torneo?.nombre?.replace(/\s+/g, '_') || 'Torneo'}.pdf`
-    doc.save(nombreArchivo)
   }
 
   const abrirModalCrear = () => {
@@ -736,61 +767,70 @@ export default function TorneoDetallePage({ params }) {
 
   const handleSubmitPesaje = async (e) => {
     e.preventDefault()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+    setGuardandoPesaje(true) // <--- Activar loading
 
-    const arrayComodines = form.comodines
-      ? form.comodines
-          .split(',')
-          .map((c) => c.trim().toUpperCase())
-          .filter(Boolean)
-      : []
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
 
-    const marcaNumero = parseInt(form.marca_amv.replace(/\D/g, '')) || 0
+      const arrayComodines = form.comodines
+        ? form.comodines
+            .split(',')
+            .map((c) => c.trim().toUpperCase())
+            .filter(Boolean)
+        : []
 
-    const payload = {
-      nombre_equipo: form.nombre_equipo?.trim().toUpperCase(),
-      numero_anillo: form.numero_anillo?.trim().toUpperCase(),
-      color_pluma: form.color_pluma?.trim().toUpperCase(),
-      peso_libras: parseFloat(form.peso_libras) || 0,
-      peso_onzas: parseFloat(form.peso_onzas) || 0,
-      comodines: arrayComodines,
-      tipo_espuela: form.tipo_espuela,
-      marca: marcaNumero,
-      marca_amv: form.marca_amv?.toUpperCase(),
-      placa_amv: form.placa_amv ? form.placa_amv.trim().toUpperCase() : 'S/P',
-      observaciones: form.observaciones
-        ? form.observaciones.trim().toUpperCase()
-        : '',
-    }
+      const marcaNumero = parseInt(form.marca_amv.replace(/\D/g, '')) || 0
 
-    if (editandoId) {
-      const { error } = await supabase
-        .from('inscripciones_pelea')
-        .update(payload)
-        .eq('id', editandoId)
-
-      if (!error) {
-        setShowModal(false)
-        setEditandoId(null)
-        cargarDatos()
-      } else {
-        alert('Error al actualizar: ' + error.message)
+      const payload = {
+        nombre_equipo: form.nombre_equipo?.trim().toUpperCase(),
+        numero_anillo: form.numero_anillo?.trim().toUpperCase(),
+        color_pluma: form.color_pluma?.trim().toUpperCase(),
+        peso_libras: parseFloat(form.peso_libras) || 0,
+        peso_onzas: parseFloat(form.peso_onzas) || 0,
+        comodines: arrayComodines,
+        tipo_espuela: form.tipo_espuela,
+        marca: marcaNumero,
+        marca_amv: form.marca_amv?.toUpperCase(),
+        placa_amv: form.placa_amv ? form.placa_amv.trim().toUpperCase() : 'S/P',
+        observaciones: form.observaciones
+          ? form.observaciones.trim().toUpperCase()
+          : '',
       }
-    } else {
-      const { error } = await supabase.from('inscripciones_pelea').insert({
-        ...payload,
-        torneo_id: torneoId,
-        criador_id: user.id,
-      })
 
-      if (!error) {
-        setShowModal(false)
-        cargarDatos()
+      if (editandoId) {
+        const { error } = await supabase
+          .from('inscripciones_pelea')
+          .update(payload)
+          .eq('id', editandoId)
+
+        if (!error) {
+          setShowModal(false)
+          setEditandoId(null)
+          await cargarDatos()
+        } else {
+          alert('Error al actualizar: ' + error.message)
+        }
       } else {
-        alert('Error al registrar: ' + error.message)
+        const { error } = await supabase.from('inscripciones_pelea').insert({
+          ...payload,
+          torneo_id: torneoId,
+          criador_id: user.id,
+        })
+
+        if (!error) {
+          setShowModal(false)
+          await cargarDatos()
+        } else {
+          alert('Error al registrar: ' + error.message)
+        }
       }
+    } catch (err) {
+      console.error(err)
+      alert('Error inesperado al guardar en báscula.')
+    } finally {
+      setGuardandoPesaje(false) // <--- Desactivar loading
     }
   }
 
@@ -890,94 +930,138 @@ export default function TorneoDetallePage({ params }) {
 
   return (
     <div className='space-y-6'>
+      {/* Overlay de carga al navegar */}
+      {navegando && (
+        <div className='fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-3'>
+          <Loader2 className='w-10 h-10 text-amber-500 animate-spin' />
+          <span className='text-xs font-bold text-slate-300 uppercase tracking-widest'>
+            {mensajeNavegacion || 'Procesando...'}
+          </span>
+        </div>
+      )}
+
       {/* Header */}
-      <div className='flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4'>
+      <div className='flex flex-col gap-4 border-b border-slate-800 pb-4'>
         <div>
-          <Link
-            href='/dashboard/torneos'
-            className='inline-flex items-center gap-1.5 text-xs text-amber-500 hover:text-amber-400 font-semibold mb-2'
+          <button
+            onClick={() => {
+              setMensajeNavegacion('Regresando al listado de torneos...')
+              setNavegando(true)
+              router.push('/dashboard/torneos')
+            }}
+            className='cursor-pointer inline-flex items-center gap-1.5 text-xs text-amber-500 hover:text-amber-400 font-semibold mb-2 transition'
           >
             <ArrowLeft size={14} /> Volver a Torneos
-          </Link>
-          <h1 className='text-2xl font-black text-slate-100'>
+          </button>
+          <h1 className='text-xl sm:text-2xl font-black text-slate-100 leading-tight'>
             {torneo?.nombre || 'Torneo'}
           </h1>
-          <p className='text-xs text-slate-400 mt-0.5'>
+          <p className='text-xs text-slate-400 mt-1'>
             Fecha: {torneo?.fecha} • {inscripciones.length} Gallos en Báscula •{' '}
             {peleas.length} Peleas Programadas
           </p>
         </div>
 
-        <div className='flex flex-wrap items-center gap-2'>
+        {/* Botonera con cursor-pointer y feedback de loading */}
+        <div className='grid grid-cols-2 sm:flex sm:flex-wrap gap-2'>
           <button
             onClick={abrirModalCrear}
-            className='flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-4 py-2 rounded-xl text-xs transition border border-slate-700'
+            className='cursor-pointer flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-3 py-2.5 rounded-xl text-xs transition border border-slate-700 active:scale-95'
           >
-            <Plus size={14} /> Registrar en Báscula
+            <Plus size={14} /> Báscula
           </button>
 
+          {/* Botón Descarga Cartelera */}
           <button
             onClick={handleExportarPDF}
-            className='flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-4 py-2 rounded-xl text-xs transition border border-slate-700'
+            disabled={descargandoCarteleraPDF}
+            className='cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-3 py-2.5 rounded-xl text-xs transition border border-slate-700 active:scale-95'
             title='Descargar cartelera oficial en PDF'
           >
-            <FileDown size={14} className='text-amber-400' /> Imprimir /
-            Exportar PDF
+            {descargandoCarteleraPDF ? (
+              <>
+                <Loader2 size={14} className='text-amber-400 animate-spin' />
+                <span>Generando...</span>
+              </>
+            ) : (
+              <>
+                <FileDown size={14} className='text-amber-400' />
+                <span>Cartelera PDF</span>
+              </>
+            )}
           </button>
 
           <button
             onClick={handleEjecutarCotejoAuto}
-            className='flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition shadow-lg shadow-amber-500/10'
+            className='cursor-pointer flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-3 py-2.5 rounded-xl text-xs transition shadow-lg shadow-amber-500/10 active:scale-95'
           >
-            <Sparkles size={14} /> Ejecutar Cotejo
+            <Sparkles size={14} /> Cotejar
           </button>
-          <Link
-            href={`/dashboard/torneos/${torneoId}/arbitraje`}
-            className='flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition shadow-lg shadow-amber-500/10'
+
+          <button
+            onClick={() => {
+              setMensajeNavegacion('Abriendo Mesa de Arbitraje en Vivo...')
+              setNavegando(true)
+              router.push(`/dashboard/torneos/${torneoId}/arbitraje`)
+            }}
+            className='cursor-pointer flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-3 py-2.5 rounded-xl text-xs transition shadow-lg shadow-amber-500/10 active:scale-95'
           >
-            <Swords size={14} /> Mesa de Arbitraje en Vivo
-          </Link>
+            <Swords size={14} /> Arbitraje Vivo
+          </button>
+
+          {/* Botón Descarga Resultados */}
           <button
             onClick={handleExportarResultadosPDF}
-            className='flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition shadow-lg shadow-emerald-600/10'
+            disabled={descargandoResultadosPDF}
+            className='cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 col-span-2 sm:col-auto flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2.5 rounded-xl text-xs transition shadow-lg shadow-emerald-600/10 active:scale-95'
             title='Descargar Reporte Completo de Resultados y Resumen Estadístico'
           >
-            <FileText size={14} /> Descargar Resultados (PDF)
+            {descargandoResultadosPDF ? (
+              <>
+                <Loader2 size={14} className='text-white animate-spin' />
+                <span>Generando...</span>
+              </>
+            ) : (
+              <>
+                <FileText size={14} />
+                <span>Descargar Resultados (PDF)</span>
+              </>
+            )}
           </button>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className='flex gap-4 border-b border-slate-800 text-sm'>
+      <div className='flex gap-2 sm:gap-4 border-b border-slate-800 text-xs sm:text-sm overflow-x-auto pb-1 scrollbar-none'>
         <button
           onClick={() => setActiveTab('cotejo')}
-          className={`pb-3 font-semibold transition border-b-2 flex items-center gap-2 ${
+          className={`cursor-pointer pb-2.5 font-semibold transition border-b-2 flex items-center gap-1.5 whitespace-nowrap px-1 ${
             activeTab === 'cotejo'
               ? 'border-amber-500 text-amber-400'
               : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Swords size={16} /> Cartelera de Peleas ({peleas.length})
+          <Swords size={15} /> Cartelera ({peleas.length})
         </button>
         <button
           onClick={() => setActiveTab('pesaje')}
-          className={`pb-3 font-semibold transition border-b-2 flex items-center gap-2 ${
+          className={`cursor-pointer pb-2.5 font-semibold transition border-b-2 flex items-center gap-1.5 whitespace-nowrap px-1 ${
             activeTab === 'pesaje'
               ? 'border-amber-500 text-amber-400'
               : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Scale size={16} /> Mesa de Pesaje ({inscripciones.length})
+          <Scale size={15} /> Pesaje ({inscripciones.length})
         </button>
         <button
           onClick={() => setActiveTab('estadisticas')}
-          className={`pb-3 font-semibold transition border-b-2 flex items-center gap-2 ${
+          className={`cursor-pointer pb-2.5 font-semibold transition border-b-2 flex items-center gap-1.5 whitespace-nowrap px-1 ${
             activeTab === 'estadisticas'
               ? 'border-amber-500 text-amber-400'
               : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <BarChart3 size={16} /> Totales y Porcentajes
+          <BarChart3 size={15} /> Estadísticas
         </button>
       </div>
 
@@ -1071,13 +1155,13 @@ export default function TorneoDetallePage({ params }) {
                       </button>
                     </div>
 
-                    {/* Confrontación: Azul vs Rojo */}
-                    <div className='grid grid-cols-11 gap-2 items-center my-2'>
+                    {/* Confrontación: Azul vs Rojo Adaptativo */}
+                    <div className='flex flex-col sm:grid sm:grid-cols-11 gap-2.5 items-center my-2.5'>
                       {/* Esquina Azul */}
                       <div
-                        className={`col-span-5 p-3 rounded-xl border transition ${
+                        className={`w-full sm:col-span-5 p-3 rounded-xl border transition ${
                           pelea.resultado === 'azul_gano'
-                            ? 'bg-blue-950/60 border-blue-500 ring-1 ring-blue-400'
+                            ? 'bg-blue-950/70 border-blue-500 ring-1 ring-blue-400'
                             : 'bg-slate-950/40 border-slate-800'
                         }`}
                       >
@@ -1090,11 +1174,11 @@ export default function TorneoDetallePage({ params }) {
                         <p className='text-[11px] text-slate-400'>
                           Aro: {gAzul?.numero_anillo} • {gAzul?.color_pluma}
                         </p>
-                        <p className='text-xs font-black text-amber-400 mt-1'>
+                        <p className='text-xs font-black text-amber-400 mt-0.5'>
                           {gAzul?.peso_libras} Lb{' '}
                           {Number(gAzul?.peso_onzas || 0).toFixed(2)} Oz
                         </p>
-                        <p className='text-[10px] text-slate-500'>
+                        <p className='text-[10px] text-slate-500 truncate'>
                           {gAzul?.placa_amv && gAzul?.placa_amv !== 'S/P'
                             ? `(${gAzul?.marca_amv || `M${gAzul?.marca}`} N•AMV-${gAzul?.placa_amv.replace(/^AMV-?/i, '')})`
                             : gAzul?.marca_amv || `M${gAzul?.marca || 0}`}{' '}
@@ -1107,16 +1191,15 @@ export default function TorneoDetallePage({ params }) {
                         )}
                       </div>
 
-                      <div className='col-span-1 text-center font-black italic text-slate-600 text-xs'>
+                      <div className='w-full sm:col-span-1 text-center font-black italic text-slate-500 text-xs py-0.5 sm:py-0'>
                         VS
                       </div>
 
                       {/* Esquina Roja */}
                       <div
-                        className={`col-span-5 p-3 rounded-xl border transition ${
-                          pelea.resultado === 'blanco_gano' ||
+                        className={`w-full sm:col-span-5 p-3 rounded-xl border transition ${
                           pelea.resultado === 'rojo_gano'
-                            ? 'bg-red-950/60 border-red-500 ring-1 ring-red-400'
+                            ? 'bg-red-950/70 border-red-500 ring-1 ring-red-400'
                             : 'bg-slate-950/40 border-slate-800'
                         }`}
                       >
@@ -1129,18 +1212,17 @@ export default function TorneoDetallePage({ params }) {
                         <p className='text-[11px] text-slate-400'>
                           Aro: {gRojo?.numero_anillo} • {gRojo?.color_pluma}
                         </p>
-                        <p className='text-xs font-black text-amber-400 mt-1'>
+                        <p className='text-xs font-black text-amber-400 mt-0.5'>
                           {gRojo?.peso_libras} Lb{' '}
                           {Number(gRojo?.peso_onzas || 0).toFixed(2)} Oz
                         </p>
-                        <p className='text-[10px] text-slate-500'>
+                        <p className='text-[10px] text-slate-500 truncate'>
                           {gRojo?.placa_amv && gRojo?.placa_amv !== 'S/P'
                             ? `(${gRojo?.marca_amv || `M${gRojo?.marca}`} N•AMV-${gRojo?.placa_amv.replace(/^AMV-?/i, '')})`
                             : gRojo?.marca_amv || `M${gRojo?.marca || 0}`}{' '}
                           • {gRojo?.tipo_espuela || 'Libre'}
                         </p>
-                        {(pelea.resultado === 'blanco_gano' ||
-                          pelea.resultado === 'rojo_gano') && (
+                        {pelea.resultado === 'rojo_gano' && (
                           <span className='inline-block text-[10px] font-black text-emerald-400 mt-2 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20'>
                             🏆 GANADOR
                           </span>
@@ -1910,21 +1992,35 @@ export default function TorneoDetallePage({ params }) {
             </div>
 
             {/* Acciones del Modal */}
-            <div className='flex gap-2 pt-3 border-t border-slate-800'>
+            <div className='flex justify-end gap-3 pt-4 border-t border-slate-800'>
               <button
                 type='button'
-                onClick={() => setModalModificarAbierto(false)}
-                className='flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition'
+                disabled={guardandoPesaje}
+                onClick={() => {
+                  setShowModal(false)
+                  setEditandoId(null)
+                }}
+                className='cursor-pointer disabled:opacity-40 px-4 py-2 rounded-lg text-sm text-slate-400 hover:bg-slate-800 transition'
               >
                 Cancelar
               </button>
               <button
-                type='button'
-                disabled={editandoFalloLoading}
-                onClick={handleGuardarModificacionFallo}
-                className='flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 text-xs font-black transition shadow-lg shadow-amber-500/10'
+                type='submit'
+                disabled={guardandoPesaje}
+                className='cursor-pointer disabled:cursor-not-allowed disabled:opacity-75 flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-lg text-sm transition active:scale-95'
               >
-                {editandoFalloLoading ? 'Guardando...' : 'Guardar Cambio'}
+                {guardandoPesaje ? (
+                  <>
+                    <Loader2 size={16} className='animate-spin' />
+                    <span>Guardando en báscula...</span>
+                  </>
+                ) : (
+                  <span>
+                    {editandoId
+                      ? 'Actualizar Información'
+                      : 'Guardar en Báscula'}
+                  </span>
+                )}
               </button>
             </div>
           </div>

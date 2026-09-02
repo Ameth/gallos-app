@@ -2,6 +2,7 @@
 
 import { useState, useEffect, use, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft,
@@ -15,11 +16,15 @@ import {
   Trophy,
   Swords,
   XCircle,
+  Loader2,
 } from 'lucide-react'
 
 export default function ArbitrajeLivePage({ params }) {
   const { id: torneoId } = use(params)
+  const router = useRouter()
   const supabase = createClient()
+
+  const [navegandoAtras, setNavegandoAtras] = useState(false)
 
   const [torneo, setTorneo] = useState(null)
   const [peleas, setPeleas] = useState([])
@@ -198,18 +203,38 @@ export default function ArbitrajeLivePage({ params }) {
 
   return (
     <div className='max-w-2xl mx-auto space-y-5 pb-12'>
+      {/* Overlay de navegación en proceso */}
+      {navegandoAtras && (
+        <div className='fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-3'>
+          <Loader2 className='w-10 h-10 text-amber-500 animate-spin' />
+          <span className='text-xs font-bold text-slate-300 uppercase tracking-widest'>
+            Regresando a Cartelera...
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <div className='flex items-center justify-between border-b border-slate-800 pb-3'>
-        <Link
-          href={`/dashboard/torneos/${torneoId}`}
-          className='text-xs text-amber-500 font-bold flex items-center gap-1'
+        <button
+          onClick={() => {
+            setNavegandoAtras(true)
+            router.push(`/dashboard/torneos/${torneoId}`)
+          }}
+          disabled={navegandoAtras}
+          className='cursor-pointer text-xs text-amber-500 hover:text-amber-400 font-bold flex items-center gap-1.5 transition disabled:opacity-50'
         >
-          <ArrowLeft size={14} /> Volver a Cartelera
-        </Link>
+          {navegandoAtras ? (
+            <Loader2 size={14} className='animate-spin' />
+          ) : (
+            <ArrowLeft size={14} />
+          )}
+          <span>{navegandoAtras ? 'Cargando...' : 'Volver a Cartelera'}</span>
+        </button>
+
         <Link
           href={`/arena/${torneoId}`}
           target='_blank'
-          className='bg-amber-500/10 text-amber-400 border border-amber-500/30 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 hover:bg-amber-500 hover:text-slate-950 transition'
+          className='cursor-pointer bg-amber-500/10 text-amber-400 border border-amber-500/30 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 hover:bg-amber-500 hover:text-slate-950 transition'
         >
           <Tv size={13} /> Abrir Pantalla Arena (TV)
         </Link>
