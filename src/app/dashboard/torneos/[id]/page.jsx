@@ -58,6 +58,7 @@ export default function TorneoDetallePage({ params }) {
   })
 
   const [guardandoPesaje, setGuardandoPesaje] = useState(false)
+  const [eliminandoPesajeId, setEliminandoPesajeId] = useState(null)
 
   // Modal Casamiento Manual
   const [galloSeleccionadoManual, setGalloSeleccionadoManual] = useState(null)
@@ -836,8 +837,23 @@ export default function TorneoDetallePage({ params }) {
 
   const handleDeleteInscripcion = async (id) => {
     if (confirm('¿Deseas eliminar este registro de la mesa de pesaje?')) {
-      await supabase.from('inscripciones_pelea').delete().eq('id', id)
-      cargarDatos()
+      setEliminandoPesajeId(id)
+      try {
+        const { error } = await supabase
+          .from('inscripciones_pelea')
+          .delete()
+          .eq('id', id)
+        if (error) {
+          alert('Error al eliminar: ' + error.message)
+        } else {
+          await cargarDatos()
+        }
+      } catch (err) {
+        console.error(err)
+        alert('Error inesperado al eliminar.')
+      } finally {
+        setEliminandoPesajeId(null)
+      }
     }
   }
 
@@ -1096,14 +1112,14 @@ export default function TorneoDetallePage({ params }) {
                     <div className='flex items-center gap-1.5'>
                       <button
                         onClick={() => abrirModalEditar(g)}
-                        className='bg-slate-800 hover:bg-slate-700 text-slate-300 p-1.5 rounded-lg transition'
+                        className='bg-slate-800 hover:bg-slate-700 text-slate-300 p-1.5 rounded-lg transition cursor-pointer'
                         title='Editar datos del gallo'
                       >
                         <Edit2 size={13} />
                       </button>
                       <button
                         onClick={() => setGalloSeleccionadoManual(g)}
-                        className='bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500 hover:text-slate-950 font-bold px-2.5 py-1 rounded-lg text-[11px] transition'
+                        className='bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500 hover:text-slate-950 font-bold px-2.5 py-1 rounded-lg text-[11px] transition cursor-pointer'
                       >
                         Casar
                       </button>
@@ -1394,17 +1410,26 @@ export default function TorneoDetallePage({ params }) {
                     <div className='flex items-center justify-end gap-2'>
                       <button
                         onClick={() => abrirModalEditar(ins)}
-                        className='text-slate-400 hover:text-amber-400 p-1 transition'
+                        disabled={eliminandoPesajeId === ins.id}
+                        className='cursor-pointer disabled:opacity-30 text-slate-400 hover:text-amber-400 p-1 transition'
                         title='Editar gallo'
                       >
                         <Edit2 size={14} />
                       </button>
                       <button
                         onClick={() => handleDeleteInscripcion(ins.id)}
-                        className='text-slate-500 hover:text-red-400 p-1 transition'
+                        disabled={eliminandoPesajeId === ins.id}
+                        className='cursor-pointer disabled:cursor-not-allowed text-slate-500 hover:text-red-400 p-1 transition flex items-center justify-center'
                         title='Eliminar de la mesa de pesaje'
                       >
-                        <Trash2 size={14} />
+                        {eliminandoPesajeId === ins.id ? (
+                          <Loader2
+                            size={14}
+                            className='animate-spin text-red-500'
+                          />
+                        ) : (
+                          <Trash2 size={14} />
+                        )}
                       </button>
                     </div>
                   </td>
@@ -1639,7 +1664,7 @@ export default function TorneoDetallePage({ params }) {
                   setGalloSeleccionadoManual(null)
                   setRivalSeleccionadoManual(null)
                 }}
-                className='px-4 py-2 rounded-lg text-xs text-slate-400 hover:bg-slate-800 transition'
+                className='px-4 py-2 rounded-lg text-xs text-slate-400 hover:bg-slate-800 transition cursor-pointer'
               >
                 Cancelar
               </button>
@@ -1647,7 +1672,7 @@ export default function TorneoDetallePage({ params }) {
                 type='button'
                 disabled={!rivalSeleccionadoManual}
                 onClick={handleGuardarCruceManual}
-                className='bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-lg text-xs transition disabled:opacity-40'
+                className='bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-lg text-xs transition disabled:opacity-40 cursor-pointer'
               >
                 Confirmar Casamiento
               </button>
@@ -1843,19 +1868,32 @@ export default function TorneoDetallePage({ params }) {
               <div className='flex justify-end gap-3 pt-4 border-t border-slate-800'>
                 <button
                   type='button'
+                  disabled={guardandoPesaje}
                   onClick={() => {
                     setShowModal(false)
                     setEditandoId(null)
                   }}
-                  className='px-4 py-2 rounded-lg text-sm text-slate-400 hover:bg-slate-800 transition'
+                  className='cursor-pointer disabled:opacity-40 px-4 py-2 rounded-lg text-sm text-slate-400 hover:bg-slate-800 transition'
                 >
                   Cancelar
                 </button>
                 <button
                   type='submit'
-                  className='bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-lg text-sm transition'
+                  disabled={guardandoPesaje}
+                  className='cursor-pointer disabled:cursor-not-allowed disabled:opacity-75 flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-lg text-sm transition active:scale-95 shadow-md shadow-amber-500/10'
                 >
-                  {editandoId ? 'Actualizar Información' : 'Guardar en Báscula'}
+                  {guardandoPesaje ? (
+                    <>
+                      <Loader2 size={16} className='animate-spin' />
+                      <span>Guardando en báscula...</span>
+                    </>
+                  ) : (
+                    <span>
+                      {editandoId
+                        ? 'Actualizar Información'
+                        : 'Guardar en Báscula'}
+                    </span>
+                  )}
                 </button>
               </div>
             </form>
@@ -1991,36 +2029,22 @@ export default function TorneoDetallePage({ params }) {
               </div>
             </div>
 
-            {/* Acciones del Modal */}
-            <div className='flex justify-end gap-3 pt-4 border-t border-slate-800'>
+            {/* Acciones del Modal de Modificar Fallo */}
+            <div className='flex gap-2 pt-3 border-t border-slate-800'>
               <button
                 type='button'
-                disabled={guardandoPesaje}
-                onClick={() => {
-                  setShowModal(false)
-                  setEditandoId(null)
-                }}
-                className='cursor-pointer disabled:opacity-40 px-4 py-2 rounded-lg text-sm text-slate-400 hover:bg-slate-800 transition'
+                onClick={() => setModalModificarAbierto(false)}
+                className='cursor-pointer flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition'
               >
                 Cancelar
               </button>
               <button
-                type='submit'
-                disabled={guardandoPesaje}
-                className='cursor-pointer disabled:cursor-not-allowed disabled:opacity-75 flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-lg text-sm transition active:scale-95'
+                type='button'
+                disabled={editandoFalloLoading}
+                onClick={handleGuardarModificacionFallo}
+                className='cursor-pointer flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 text-xs font-black transition shadow-lg shadow-amber-500/10'
               >
-                {guardandoPesaje ? (
-                  <>
-                    <Loader2 size={16} className='animate-spin' />
-                    <span>Guardando en báscula...</span>
-                  </>
-                ) : (
-                  <span>
-                    {editandoId
-                      ? 'Actualizar Información'
-                      : 'Guardar en Báscula'}
-                  </span>
-                )}
+                {editandoFalloLoading ? 'Guardando...' : 'Guardar Cambio'}
               </button>
             </div>
           </div>
